@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust Tunnel Admin Core Panel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #07070a;
+            --card-bg: rgba(18, 18, 29, 0.65);
+            --border-color: rgba(255, 255, 255, 0.07);
+            --border-glow: rgba(99, 102, 241, 0.15);
+            --primary: #6366f1;
+            --primary-glow: rgba(99, 102, 241, 0.35);
+            --secondary: #14b8a6;
+            --accent-pink: #d946ef;
+            --accent-orange: #f97316;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(at 10% 20%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 90% 80%, rgba(20, 184, 166, 0.12) 0px, transparent 50%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2.5rem 2rem;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px var(--primary-glow);
+            animation: pulse-glow 3s infinite alternate;
+        }
+
+        .logo-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: #fff;
+        }
+
+        .logo-title h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #ffffff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-title p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .status-badge {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            color: var(--success);
+            padding: 0.5rem 1rem;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.05);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--success);
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px var(--success);
+            animation: blink 1.5s infinite;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, var(--primary), #4f46e5);
+            border: none;
+            color: #fff;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            box-shadow: none;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: none;
+        }
+
+        /* Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .metric-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+        }
+
+        .metric-card:hover {
+            border-color: rgba(99, 102, 241, 0.3);
+            box-shadow: 0 8px 30px var(--border-glow);
+        }
+
+        .metric-info h3 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-info .value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .metric-icon {
+            width: 48px;
+            height: 48px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+        }
+
+        .metric-card:nth-child(2) .metric-icon {
+            color: var(--secondary);
+        }
+
+        .metric-card:nth-child(3) .metric-icon {
+            color: var(--accent-pink);
+        }
+
+        .metric-card:nth-child(4) .metric-icon {
+            color: var(--accent-orange);
+        }
+
+        /* Section Layouts */
+        .panel-row {
+            display: grid;
+            grid-template-columns: 3fr 2fr;
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        @media (max-width: 1024px) {
+            .panel-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+            border-radius: 16px;
+            padding: 1.75rem;
+            display: flex;
+            flex-direction: column;
+            min-height: 400px;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .panel-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .panel-header h2 svg {
+            color: var(--primary);
+        }
+
+        /* User Statistics Lists */
+        .user-stats-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            max-height: 450px;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .user-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .user-card:hover {
+            border-color: rgba(99, 102, 241, 0.25);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .user-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .user-email {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .user-email::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background-color: var(--secondary);
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .user-badge {
+            font-size: 0.75rem;
+            background: rgba(20, 184, 166, 0.1);
+            color: var(--secondary);
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .user-traffic-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .traffic-stat {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .traffic-stat span.value {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        /* Connections Table */
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        th {
+            color: var(--text-muted);
+            font-weight: 500;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-muted);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.01);
+            color: var(--text-main);
+        }
+
+        .dest-highlight {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .sni-badge {
+            background: rgba(217, 70, 239, 0.1);
+            color: var(--accent-pink);
+            border: 1px solid rgba(217, 70, 239, 0.2);
+            padding: 0.25rem 0.5rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            display: inline-block;
+        }
+
+        /* Config Modal styling */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(7, 7, 10, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background: #11111a;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            width: 90%;
+            max-width: 800px;
+            padding: 2rem;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            transform: scale(0.9);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal.active .modal-content {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .modal-header h3 {
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        .modal-body {
+            overflow-y: auto;
+            flex-grow: 1;
+            padding-right: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        textarea.config-area {
+            width: 100%;
+            height: 400px;
+            background: #07070a;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 1rem;
+            color: #38bdf8;
+            font-family: monospace;
+            font-size: 0.85rem;
+            resize: none;
+            outline: none;
+        }
+
+        textarea.config-area:focus {
+            border-color: var(--primary);
+        }
+
+        .close-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .close-btn:hover {
+            color: #fff;
+        }
+
+        /* Alert and notification toasts */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: var(--success);
+            color: #fff;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 1000;
+        }
+
+        .toast.error {
+            background: var(--danger);
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+        }
+
+        .toast.active {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        /* Keyframes */
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 15px rgba(99, 102, 241, 0.3); }
+            100% { box-shadow: 0 0 25px rgba(99, 102, 241, 0.6); }
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo-section">
+                <div class="logo-icon">
+                    <!-- Dynamic network tunnel SVG logo -->
+                    <svg viewBox="0 0 24 24">
+                        <path d="M4 15h2v3h12v-3h2v3c0 1.1-.9 2-2 2H6c-1.1 0-2-.9-2-2v-3zm16-4h-2V8H6v3H4V8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v3zm-5-3h-2v3h-4v2h4v3h2v-3h4v-2h-4V8z"/>
+                    </svg>
+                </div>
+                <div class="logo-title">
+                    <h1>RUST TUNNEL</h1>
+                    <p>NEXT-GEN ASYNC VPN CORE</p>
+                </div>
+            </div>
+            
+            <div class="header-actions">
+                <div class="status-badge">
+                    <span class="status-dot"></span>
+                    CORE ONLINE
+                </div>
+                <button class="btn" id="open-config-btn">
+                    <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Configure Inbounds
+                </button>
+            </div>
+        </header>
+
+        <!-- Metrics overview -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-info">
+                    <h3>Total Downloaded</h3>
+                    <div class="value" id="tot-rx">0.00 B</div>
+                </div>
+                <div class="metric-icon">
+                    <svg style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                </div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-info">
+                    <h3>Total Uploaded</h3>
+                    <div class="value" id="tot-tx">0.00 B</div>
+                </div>
+                <div class="metric-icon">
+                    <svg style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-info">
+                    <h3>Active Tunnels</h3>
+                    <div class="value" id="active-conns">0</div>
+                </div>
+                <div class="metric-icon">
+                    <svg style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+                    </svg>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-info">
+                    <h3>User Accounts</h3>
+                    <div class="value" id="tot-users">0</div>
+                </div>
+                <div class="metric-icon">
+                    <svg style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A11.386 11.386 0 0110.089 20.08l-.071-.002c-2.733-.007-5.27-.32-7.575-.928m18.199-8.996c0-1.346-.34-2.61-.941-3.72M18.799 10.186a1.5 1.5 0 00-.584-2.811 11.454 11.454 0 00-6.43 0 1.5 1.5 0 00-.584 2.811m0 0c.071.07.137.147.198.23m-1.298-2.54c.4-.836.974-1.565 1.677-2.148m0 0a11.386 11.386 0 0110.089 2.088M9 7.75A1.75 1.75 0 117.25 6 1.75 1.75 0 019 7.75v0z" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard Layout panels -->
+        <div class="panel-row">
+            <!-- Left: Active Sockets -->
+            <div class="panel-card">
+                <div class="panel-header">
+                    <h2>
+                        <svg style="width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12M8.25 17.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                        </svg>
+                        Live Connection Routes
+                    </h2>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Client IP</th>
+                                <th>Destination Address</th>
+                                <th>Sniffed SNI</th>
+                                <th>Outbound Route</th>
+                                <th>Data (Rx / Tx)</th>
+                                <th>Uptime</th>
+                            </tr>
+                        </thead>
+                        <tbody id="connections-table-body">
+                            <tr>
+                                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 3rem 0;">No active connections running</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right: Registered Accounts metrics -->
+            <div class="panel-card">
+                <div class="panel-header">
+                    <h2>
+                        <svg style="width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                        </svg>
+                        Users Traffic metrics
+                    </h2>
+                </div>
+                <div class="user-stats-list" id="users-stats-container">
+                    <p style="text-align: center; color: var(--text-muted); padding: 3rem 0;">No user stats collected yet</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Config Modal -->
+    <div class="modal" id="config-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Dynamic Core Configuration Manager</h3>
+                <button class="close-btn" id="close-modal-btn">
+                    <svg style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">
+                    Modify target_core JSON configuration dynamically below. Any changes to clients, UUIDs, or routing rules will apply immediately on save.
+                </p>
+                <textarea class="config-area" id="config-textarea" spellcheck="false"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-config-btn">Cancel</button>
+                <button class="btn" id="save-config-btn">Reload Core Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast message alert -->
+    <div class="toast" id="toast-message">
+        <span id="toast-icon">✓</span>
+        <span id="toast-text">Settings reloaded successfully</span>
+    </div>
+
+    <!-- Client-side Logic polling Axum REST endpoints -->
+    <script>
+        const configModal = document.getElementById('config-modal');
+        const openConfigBtn = document.getElementById('open-config-btn');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const cancelConfigBtn = document.getElementById('cancel-config-btn');
+        const saveConfigBtn = document.getElementById('save-config-btn');
+        const configTextarea = document.getElementById('config-textarea');
+        const toast = document.getElementById('toast-message');
+        const toastText = document.getElementById('toast-text');
+        const toastIcon = document.getElementById('toast-icon');
+
+        // Helpers to display human-readable byte sizes
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0.00 B';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function formatDuration(seconds) {
+            if (seconds < 60) return `${seconds}s`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+            const hours = Math.floor(minutes / 60);
+            return `${hours}h ${minutes % 60}m`;
+        }
+
+        // Display toast notification alerts
+        function showToast(message, isError = false) {
+            toastText.textContent = message;
+            toastIcon.textContent = isError ? '✗' : '✓';
+            if (isError) {
+                toast.classList.add('error');
+            } else {
+                toast.classList.remove('error');
+            }
+            toast.classList.add('active');
+            setTimeout(() => {
+                toast.classList.remove('active');
+            }, 3500);
+        }
+
+        // Fetch statistics and connection tables from Axum API
+        async function fnFetchDashboardStats() {
+            try {
+                // Polling /stats endpoint
+                const statsRes = await fetch('/stats');
+                const usersStats = await statsRes.json();
+
+                // Polling /connections endpoint
+                const connsRes = await fetch('/connections');
+                const conns = await connsRes.json();
+
+                // 1. Update metric overview cards
+                document.getElementById('active-conns').textContent = conns.length;
+                document.getElementById('tot-users').textContent = usersStats.length;
+
+                let sumRx = 0;
+                let sumTx = 0;
+                usersStats.forEach(u => {
+                    sumRx += u.rx;
+                    sumTx += u.tx;
+                });
+                
+                document.getElementById('tot-rx').textContent = formatBytes(sumRx);
+                document.getElementById('tot-tx').textContent = formatBytes(sumTx);
+
+                // 2. Render Users Table
+                const usersContainer = document.getElementById('users-stats-container');
+                if (usersStats.length === 0) {
+                    usersContainer.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 3rem 0;">No active user metrics</p>`;
+                } else {
+                    usersContainer.innerHTML = usersStats.map(u => `
+                        <div class="user-card">
+                            <div class="user-info">
+                                <span class="user-email">${u.email}</span>
+                                <span class="user-badge">Active</span>
+                            </div>
+                            <div class="user-traffic-details">
+                                <div class="traffic-stat">
+                                    <span>Download:</span>
+                                    <span class="value">${formatBytes(u.rx)}</span>
+                                </div>
+                                <div class="traffic-stat">
+                                    <span>Upload:</span>
+                                    <span class="value">${formatBytes(u.tx)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                // 3. Render Connections Table
+                const connsTableBody = document.getElementById('connections-table-body');
+                if (conns.length === 0) {
+                    connsTableBody.innerHTML = `
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 3rem 0;">No active connections running</td>
+                        </tr>
+                    `;
+                } else {
+                    connsTableBody.innerHTML = conns.map(c => `
+                        <tr>
+                            <td>${c.client_ip}</td>
+                            <td class="dest-highlight">${c.dest_address}</td>
+                            <td>${c.sni ? `<span class="sni-badge">${c.sni}</span>` : '<span style="color: rgba(255,255,255,0.15)">-</span>'}</td>
+                            <td><span style="font-weight: 600; color: #a5b4fc;">${c.outbound_tag}</span></td>
+                            <td>
+                                <div>Rx: <span style="color: var(--secondary)">${formatBytes(c.rx)}</span></div>
+                                <div>Tx: <span style="color: var(--primary)">${formatBytes(c.tx)}</span></div>
+                            </td>
+                            <td>${formatDuration(c.uptime_secs)}</td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error("Failed to pull metrics stats: ", err);
+            }
+        }
+
+        // Modal triggers
+        openConfigBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/config');
+                if (res.ok) {
+                    const config = await res.json();
+                    configTextarea.value = JSON.stringify(config, null, 4);
+                    configModal.classList.add('active');
+                } else {
+                    showToast("Failed to retrieve configuration data", true);
+                }
+            } catch (err) {
+                showToast("Failed to connect to core API", true);
+            }
+        });
+
+        const hideModal = () => {
+            configModal.classList.remove('active');
+        };
+
+        closeModalBtn.addEventListener('click', hideModal);
+        cancelConfigBtn.addEventListener('click', hideModal);
+
+        // Submit hot-reload request config to Axum
+        saveConfigBtn.addEventListener('click', async () => {
+            try {
+                const jsonText = configTextarea.value;
+                const parsedConfig = JSON.parse(jsonText);
+
+                const res = await fetch('/reload', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ config: parsedConfig })
+                });
+
+                if (res.ok) {
+                    showToast("Configuration dynamic reload success!");
+                    hideModal();
+                    fnFetchDashboardStats();
+                } else {
+                    showToast("Server rejected updated configurations", true);
+                }
+            } catch (err) {
+                showToast("Invalid JSON syntax configuration formatting", true);
+            }
+        });
+
+        // Loop polls dashboard stats every 1 second
+        setInterval(fnFetchDashboardStats, 1000);
+        fnFetchDashboardStats();
+    </script>
+</body>
+</html>
