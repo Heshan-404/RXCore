@@ -17,11 +17,12 @@ use crate::transport::tls::tls_helper::create_client_config;
 
 pub struct VlessClientOutbound {
     pub config: VlessClientConfig,
+    pub is_udp: bool,
 }
 
 impl VlessClientOutbound {
-    pub fn new(config: VlessClientConfig) -> Self {
-        Self { config }
+    pub fn new(config: VlessClientConfig, is_udp: bool) -> Self {
+        Self { config, is_udp }
     }
 }
 
@@ -118,7 +119,8 @@ impl OutboundHandler for VlessClientOutbound {
         header.push(0u8); // Version
         header.extend_from_slice(uuid.as_bytes()); // UUID
         header.push(0u8); // Addons len
-        header.push(1u8); // Command TCP CONNECT
+        let cmd = if self.is_udp { 2u8 } else { 1u8 };
+        header.push(cmd); // Command: 1 = TCP CONNECT, 2 = UDP
         header.extend_from_slice(&dest_port.to_be_bytes()); // Port
 
         if let Ok(ip_addr) = dest_addr.parse::<std::net::IpAddr>() {

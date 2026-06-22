@@ -21,7 +21,7 @@ use crate::state::EngineState;
 pub async fn parse_vless_inbound(
     stream: &mut InboundTransportStream,
     engine_state: &Arc<EngineState>,
-) -> Result<(String, u16, [u8; 16]), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(String, u16, [u8; 16], u8), Box<dyn std::error::Error + Send + Sync>> {
     let mut header = [0u8; 18];
     stream.read_exact(&mut header).await?;
 
@@ -77,9 +77,8 @@ pub async fn parse_vless_inbound(
         _ => return Err("Invalid VLESS target address type".into()),
     };
 
-    // Send VLESS connection response header (version 0, 0 addons)
     let response = [0u8, 0u8];
     stream.write_all(&response).await?;
 
-    Ok((dest_addr, port, uuid))
+    Ok((dest_addr, port, uuid, cmd))
 }

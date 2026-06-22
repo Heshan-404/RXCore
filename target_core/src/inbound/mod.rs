@@ -159,9 +159,8 @@ async fn handle_inbound_stream(
     engine_state: Arc<EngineState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if protocol == "vless" {
-        // Run VLESS protocol parser to validate UUID and read routing info
-        let (target_addr, target_port, user_uuid) = vless::parse_vless_inbound(&mut stream, &engine_state).await?;
-        dispatch_connection(stream, client_addr, target_addr, target_port, inbound_tag, user_uuid, engine_state).await?;
+        let (target_addr, target_port, user_uuid, cmd) = vless::parse_vless_inbound(&mut stream, &engine_state).await?;
+        dispatch_connection(stream, client_addr, target_addr, target_port, inbound_tag, user_uuid, cmd, engine_state).await?;
     } else {
         return Err("Unsupported inbound protocol".into());
     }

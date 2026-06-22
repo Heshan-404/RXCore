@@ -7,31 +7,29 @@ use tracing::{info, warn};
 pub mod tls_helper {
     use super::*;
 
-    // Low-overhead TLS client configuration using native OS roots
+    use std::sync::OnceLock;
+    static CLIENT_CONNECTOR: OnceLock<TlsConnector> = OnceLock::new();
+
     pub fn create_client_config(
         _server_name: &str,
     ) -> Result<TlsConnector, Box<dyn std::error::Error + Send + Sync>> {
-        let mut root_store = rustls::RootCertStore::empty();
-        
-        // Load native platform root certificates
-        let native_certs = rustls_native_certs::load_native_certs();
-        if !native_certs.errors.is_empty() {
-            for err in native_certs.errors {
-                warn!(error = %err, "Failed to load a native platform root certificate");
+        let connector = CLIENT_CONNECTOR.get_or_init(|| {
+            let mut root_store = rustls::RootCertStore::empty();
+            let native_certs = rustls_native_certs::load_native_certs();
+            if !native_certs.errors.is_empty() {
+                for err in &native_certs.errors {
+                    warn!(error = %err, "Failed to load native root cert");
+                }
             }
-        }
-
-        for cert in native_certs.certs {
-            if let Err(e) = root_store.add(cert) {
-                warn!(error = %e, "Failed to add native certificate to trust store");
+            for cert in native_certs.certs {
+                let _ = root_store.add(cert);
             }
-        }
-
-        let config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
-
-        Ok(TlsConnector::from(Arc::new(config)))
+            let config = rustls::ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth();
+            TlsConnector::from(Arc::new(config))
+        });
+        Ok(connector.clone())
     }
 
     // Auto-generate self-signed certs for server TLS configuration if custom files are not configured

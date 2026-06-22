@@ -17,8 +17,17 @@ pub async fn dispatch_connection(
     dest_port: u16,
     inbound_tag: String,
     user_uuid: [u8; 16],
+    cmd: u8,
     engine_state: Arc<EngineState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match inbound_stream {
+        InboundTransportStream::Plain(ref socket) => {
+            let _ = socket.set_nodelay(true);
+        }
+        InboundTransportStream::Tls(ref stream) => {
+            let _ = stream.get_ref().0.set_nodelay(true);
+        }
+    }
     let sni = sniff_sni(&inbound_stream).await;
     if let Some(ref parsed_sni) = sni {
         info!(sni = %parsed_sni, "Parsed SNI successfully from connection");
@@ -56,7 +65,17 @@ pub async fn dispatch_connection(
         "Routing connection resolved"
     );
 
-    let outbound_handler = get_outbound_handler(outbound_config.as_ref())?;
+    let is_udp = cmd == 2;
+    let outbound_handler: Box<dyn crate::outbound::OutboundHandler> = match outbound_config.as_ref().map(|c| c.protocol.as_str()) {
+        Some("vless") => get_outbound_handler(outbound_config.as_ref(), is_udp)?,
+        _ => {
+            if is_udp {
+                Box::new(crate::outbound::udp::UdpOutbound::new())
+            } else {
+                get_outbound_handler(outbound_config.as_ref(), false)?
+            }
+        }
+    };
 
     // Register active connection
     let conn_id = Uuid::new_v4();

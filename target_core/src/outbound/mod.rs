@@ -9,6 +9,7 @@ use crate::state::EngineState;
 pub mod fragment;
 pub mod freedom;
 pub mod vless_client;
+pub mod udp;
 
 use crate::inbound::InboundTransportStream;
 
@@ -27,7 +28,7 @@ pub trait OutboundHandler: Send + Sync {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 
-pub fn get_outbound_handler(config: Option<&OutboundConfig>) -> Result<Box<dyn OutboundHandler>, Box<dyn std::error::Error + Send + Sync>> {
+pub fn get_outbound_handler(config: Option<&OutboundConfig>, is_udp: bool) -> Result<Box<dyn OutboundHandler>, Box<dyn std::error::Error + Send + Sync>> {
     match config {
         Some(c) => match c.protocol.as_str() {
             "freedom" => Ok(Box::new(freedom::FreedomOutbound::new())),
@@ -38,7 +39,7 @@ pub fn get_outbound_handler(config: Option<&OutboundConfig>) -> Result<Box<dyn O
             "vless" => {
                 let settings = c.settings.as_ref().and_then(|s| s.vless.clone())
                     .ok_or_else(|| Box::<dyn std::error::Error + Send + Sync>::from("VLESS client outbound configuration missing"))?;
-                Ok(Box::new(vless_client::VlessClientOutbound::new(settings)))
+                Ok(Box::new(vless_client::VlessClientOutbound::new(settings, is_udp)))
             }
             "blackhole" => Ok(Box::new(BlackholeOutbound::new())),
             _ => Ok(Box::new(freedom::FreedomOutbound::new())),
