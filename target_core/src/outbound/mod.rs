@@ -10,6 +10,7 @@ pub mod fragment;
 pub mod freedom;
 pub mod vless_client;
 pub mod udp;
+pub mod hysteria_outbound;
 
 use crate::inbound::InboundTransportStream;
 
@@ -40,6 +41,11 @@ pub fn get_outbound_handler(config: Option<&OutboundConfig>, is_udp: bool) -> Re
                 let settings = c.settings.as_ref().and_then(|s| s.vless.clone())
                     .ok_or_else(|| Box::<dyn std::error::Error + Send + Sync>::from("VLESS client outbound configuration missing"))?;
                 Ok(Box::new(vless_client::VlessClientOutbound::new(settings, is_udp)))
+            }
+            "hysteria2" => {
+                let settings = c.settings.as_ref().and_then(|s| s.hysteria2.clone())
+                    .ok_or_else(|| Box::<dyn std::error::Error + Send + Sync>::from("Hysteria 2 client outbound configuration missing"))?;
+                Ok(Box::new(hysteria_outbound::Hysteria2ClientOutbound::new(settings)))
             }
             "blackhole" => Ok(Box::new(BlackholeOutbound::new())),
             _ => Ok(Box::new(freedom::FreedomOutbound::new())),

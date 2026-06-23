@@ -49,7 +49,7 @@ pub struct UserStatsResponse {
 }
 
 async fn get_stats(State(state): State<Arc<EngineState>>) -> Json<Vec<UserStatsResponse>> {
-    let stats_guard = state.stats.lock().unwrap();
+    let stats_guard = state.stats.read();
     let mut response = Vec::new();
     for (email, user_stat) in stats_guard.iter() {
         response.push(UserStatsResponse {
@@ -75,7 +75,7 @@ pub struct ConnectionResponse {
 }
 
 async fn list_connections(State(state): State<Arc<EngineState>>) -> Json<Vec<ConnectionResponse>> {
-    let conns_guard = state.active_connections.lock().unwrap();
+    let conns_guard = state.active_connections.read();
     let mut response = Vec::new();
     for conn in conns_guard.values() {
         response.push(ConnectionResponse {
@@ -112,6 +112,6 @@ async fn serve_index() -> Html<&'static str> {
 }
 
 async fn get_config(State(state): State<Arc<EngineState>>) -> Json<Config> {
-    let config_guard = state.config.lock().unwrap();
+    let config_guard = state.config.read();
     Json(config_guard.clone())
 }

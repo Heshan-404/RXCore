@@ -17,7 +17,7 @@ pub mod transport;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Setup structured subscriber trace logs
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
@@ -34,6 +34,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 "listen": "0.0.0.0",
                 "port": 443,
                 "protocol": "vless",
+                "settings": {
+                    "clients": [
+                        {
+                            "id": "ad60c2b2-cc0c-492a-89aa-c92330a10cc9",
+                            "email": "test_user@example.com"
+                        }
+                    ]
+                },
+                "stream_settings": {
+                    "security": "tls",
+                    "tls_settings": {
+                        "server_name": "www.tiktok.com",
+                        "certificate_file": null,
+                        "key_file": null
+                    }
+                }
+            },
+            {
+                "tag": "hysteria2-inbound",
+                "listen": "0.0.0.0",
+                "port": 443,
+                "protocol": "hysteria2",
                 "settings": {
                     "clients": [
                         {
@@ -93,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Boot listener thread loops
     let state_ref = Arc::clone(&engine_state);
     let inbounds = {
-        let config_guard = state_ref.config.lock().unwrap();
+        let config_guard = state_ref.config.read();
         config_guard.inbounds.clone()
     };
 

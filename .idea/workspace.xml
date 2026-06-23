@@ -4,7 +4,16 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="2d9788a2-898c-4704-8557-f65fa825affd" name="Changes" comment="" />
+    <list default="true" id="2d9788a2-898c-4704-8557-f65fa825affd" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/target_core/src/outbound/udp.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/deploy.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/deploy.ps1" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target_core/src/dispatcher/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/target_core/src/dispatcher/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target_core/src/inbound/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/target_core/src/inbound/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target_core/src/inbound/socks5.rs" beforeDir="false" afterPath="$PROJECT_DIR$/target_core/src/inbound/socks5.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target_core/src/inbound/vless.rs" beforeDir="false" afterPath="$PROJECT_DIR$/target_core/src/inbound/vless.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target_core/src/outbound/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/target_core/src/outbound/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/target_core/src/transport/tls.rs" beforeDir="false" afterPath="$PROJECT_DIR$/target_core/src/transport/tls.rs" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -65,6 +74,7 @@
       <workItem from="1781373477196" duration="1644000" />
       <workItem from="1781501832820" duration="47000" />
       <workItem from="1781602018485" duration="1193000" />
+      <workItem from="1782106544074" duration="35000" />
     </task>
     <servers />
   </component>

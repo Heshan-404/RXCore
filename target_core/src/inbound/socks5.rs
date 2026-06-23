@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info, warn};
+use bytes::BufMut;
 
 use crate::config::InboundConfig;
 use crate::dispatcher::dispatch_connection;
@@ -145,16 +146,16 @@ pub struct ClientAssociation {
     pub rx_counter: Arc<AtomicU64>,
 }
 
-static ASSOC_MAP: OnceLock<std::sync::Mutex<HashMap<u16, ClientAssociation>>> = OnceLock::new();
-static CLIENT_SESSIONS: OnceLock<std::sync::Mutex<HashMap<SocketAddr, u16>>> = OnceLock::new();
+static ASSOC_MAP: OnceLock<parking_lot::Mutex<HashMap<u16, ClientAssociation>>> = OnceLock::new();
+static CLIENT_SESSIONS: OnceLock<parking_lot::Mutex<HashMap<SocketAddr, u16>>> = OnceLock::new();
 static NEXT_ASSOC_ID: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(1);
 
-fn get_assoc_map() -> &'static std::sync::Mutex<HashMap<u16, ClientAssociation>> {
-    ASSOC_MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+fn get_assoc_map() -> &'static parking_lot::Mutex<HashMap<u16, ClientAssociation>> {
+    ASSOC_MAP.get_or_init(|| parking_lot::Mutex::new(HashMap::new()))
 }
 
-fn get_client_sessions() -> &'static std::sync::Mutex<HashMap<SocketAddr, u16>> {
-    CLIENT_SESSIONS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+fn get_client_sessions() -> &'static parking_lot::Mutex<HashMap<SocketAddr, u16>> {
+    CLIENT_SESSIONS.get_or_init(|| parking_lot::Mutex::new(HashMap::new()))
 }
 
 static CLEANUP_ONCE: std::sync::Once = std::sync::Once::new();
@@ -167,7 +168,7 @@ fn spawn_association_cleanup_task() {
             let mut to_remove = Vec::new();
             
             {
-                let assoc_guard = get_assoc_map().lock().unwrap();
+                let assoc_guard = get_assoc_map().lock();
                 for (&id, assoc) in assoc_guard.iter() {
                     let last_secs = assoc.last_active.load(Ordering::Relaxed);
                     if now.saturating_sub(last_secs) > 60 {
@@ -177,8 +178,8 @@ fn spawn_association_cleanup_task() {
             }
             
             if !to_remove.is_empty() {
-                let mut assoc_guard = get_assoc_map().lock().unwrap();
-                let mut sessions_guard = get_client_sessions().lock().unwrap();
+                let mut assoc_guard = get_assoc_map().lock();
+                let mut sessions_guard = get_client_sessions().lock();
                 for (id, client_addr) in to_remove {
                     assoc_guard.remove(&id);
                     sessions_guard.remove(&client_addr);
@@ -201,8 +202,8 @@ fn get_or_create_association(
 ) -> u16 {
     ensure_cleanup_task_spawned();
 
-    let mut sessions_guard = get_client_sessions().lock().unwrap();
-    let mut assoc_guard = get_assoc_map().lock().unwrap();
+    let mut sessions_guard = get_client_sessions().lock();
+    let mut assoc_guard = get_assoc_map().lock();
     
     if let Some(&assoc_id) = sessions_guard.get(&client_addr) {
         if let Some(assoc) = assoc_guard.get(&assoc_id) {
@@ -234,7 +235,7 @@ static UDP_UPSTREAM_TX: OnceLock<tokio::sync::mpsc::Sender<UdpUpstreamPacket>> =
 
 fn get_udp_upstream_tx(engine_state: &Arc<EngineState>) -> tokio::sync::mpsc::Sender<UdpUpstreamPacket> {
     UDP_UPSTREAM_TX.get_or_init(|| {
-        let (tx, rx) = tokio::sync::mpsc::channel(1024);
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
         let engine_clone = Arc::clone(engine_state);
         tokio::spawn(async move {
             run_global_vless_udp_tunnel(rx, engine_clone).await;
@@ -247,7 +248,7 @@ async fn establish_raw_vless_stream(
     engine_state: &Arc<EngineState>,
 ) -> Result<VlessTunnelStream, Box<dyn std::error::Error + Send + Sync>> {
     let vless_config = {
-        let config_guard = engine_state.config.lock().unwrap();
+        let config_guard = engine_state.config.read();
         let vless_outbound = config_guard.outbounds.iter().find(|o| o.protocol == "vless");
         vless_outbound.and_then(|o| o.settings.as_ref().and_then(|s| s.vless.clone()))
     };
@@ -293,7 +294,7 @@ async fn connect_to_vless(
     let mut server_stream = establish_raw_vless_stream(engine_state).await?;
 
     let vless_config = {
-        let config_guard = engine_state.config.lock().unwrap();
+        let config_guard = engine_state.config.read();
         let vless_outbound = config_guard.outbounds.iter().find(|o| o.protocol == "vless");
         vless_outbound.and_then(|o| o.settings.as_ref().and_then(|s| s.vless.clone()))
     };
@@ -361,6 +362,7 @@ async fn run_global_vless_udp_tunnel(
             let mut buf_reader = BufReader::with_capacity(65536, read_half);
             let mut header_buf = [0u8; 4];
             let mut payload_buf = [0u8; 65535];
+            let mut reply_buf = vec![0u8; 65535 + 300];
             loop {
                 if buf_reader.read_exact(&mut header_buf).await.is_err() {
                     break;
@@ -398,7 +400,7 @@ async fn run_global_vless_udp_tunnel(
                 let payload = &payload_buf[offset..frame_len];
 
                 let association = {
-                    let guard = get_assoc_map().lock().unwrap();
+                    let guard = get_assoc_map().lock();
                     if let Some(assoc) = guard.get(&assoc_id) {
                         assoc.last_active.store(current_secs(), Ordering::Relaxed);
                         Some(assoc.clone())
@@ -408,7 +410,6 @@ async fn run_global_vless_udp_tunnel(
                 };
 
                 if let Some(assoc) = association {
-                    let mut reply_buf = [0u8; 300 + 65535];
                     reply_buf[0] = 0x00;
                     reply_buf[1] = 0x00;
                     reply_buf[2] = 0x00;
@@ -428,37 +429,49 @@ async fn run_global_vless_udp_tunnel(
         };
 
         let upstream_task = async {
+            let mut send_buf = bytes::BytesMut::with_capacity(65535);
             while let Some(packet) = rx.recv().await {
+                send_buf.clear();
                 let target_port = packet.target.port();
-                let mut header = bytes::BytesMut::with_capacity(30);
-                header.extend_from_slice(&packet.assoc_id.to_be_bytes());
-
+                
+                // Write placeholder for frame length prefix (2 bytes)
+                send_buf.put_u16(0);
+                
+                // Write association ID
+                send_buf.put_u16(packet.assoc_id);
+                
+                // Write address type and address
                 match &packet.target {
                     UdpTarget::Ip(ip, _) => {
                         match ip {
                             std::net::IpAddr::V4(ipv4) => {
-                                header.extend_from_slice(&[1u8]);
-                                header.extend_from_slice(&ipv4.octets());
+                                send_buf.put_u8(1);
+                                send_buf.put_slice(&ipv4.octets());
                             }
                             std::net::IpAddr::V6(ipv6) => {
-                                header.extend_from_slice(&[4u8]);
-                                header.extend_from_slice(&ipv6.octets());
+                                send_buf.put_u8(4);
+                                send_buf.put_slice(&ipv6.octets());
                             }
                         }
                     }
                     UdpTarget::Domain(domain, _) => {
-                        header.extend_from_slice(&[3u8]);
-                        header.extend_from_slice(&[domain.len() as u8]);
-                        header.extend_from_slice(domain.as_bytes());
+                        send_buf.put_u8(3);
+                        send_buf.put_u8(domain.len() as u8);
+                        send_buf.put_slice(domain.as_bytes());
                     }
                 }
-                header.extend_from_slice(&target_port.to_be_bytes());
+                
+                // Write target port
+                send_buf.put_u16(target_port);
 
-                let total_len = header.len() + packet.payload.len();
-                let mut send_buf = bytes::BytesMut::with_capacity(2 + total_len);
-                send_buf.extend_from_slice(&(total_len as u16).to_be_bytes());
-                send_buf.extend_from_slice(&header);
-                send_buf.extend_from_slice(&packet.payload);
+                // Compute total frame length (header + payload), excluding the length prefix itself
+                let total_len = send_buf.len() - 2 + packet.payload.len();
+                
+                // Fill the length prefix at the beginning of the buffer
+                send_buf[0..2].copy_from_slice(&(total_len as u16).to_be_bytes());
+                
+                // Append payload
+                send_buf.put_slice(&packet.payload);
 
                 if write_half.write_all(&send_buf).await.is_err() {
                     return false;
@@ -482,25 +495,40 @@ async fn run_global_vless_udp_tunnel(
     }
 }
 
+async fn read_exact_to_buf<R: tokio::io::AsyncReadExt + Unpin>(
+    stream: &mut R,
+    buf: &mut bytes::BytesMut,
+    needed: usize,
+) -> std::io::Result<()> {
+    let current_len = buf.len();
+    if current_len < needed {
+        buf.resize(needed, 0);
+        stream.read_exact(&mut buf[current_len..needed]).await?;
+    }
+    Ok(())
+}
+
 async fn handle_socks5_connection(
     mut socket: TcpStream,
     client_addr: SocketAddr,
     inbound_tag: String,
     engine_state: Arc<EngineState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut header = [0u8; 2];
-    socket.read_exact(&mut header).await?;
+    let mut buf = bytes::BytesMut::with_capacity(128);
 
-    let version = header[0];
-    let nmethods = header[1] as usize;
+    read_exact_to_buf(&mut socket, &mut buf, 2).await?;
+
+    let version = buf[0];
+    let nmethods = buf[1] as usize;
 
     if version != 0x05 {
         return Err("Unsupported SOCKS version".into());
     }
 
-    let mut methods = vec![0u8; nmethods];
-    socket.read_exact(&mut methods).await?;
+    let min_needed = 2 + nmethods;
+    read_exact_to_buf(&mut socket, &mut buf, min_needed).await?;
 
+    let methods = &buf[2..min_needed];
     if !methods.contains(&0x00) {
         socket.write_all(&[0x05, 0xff]).await?;
         return Err("No acceptable auth methods".into());
@@ -508,12 +536,13 @@ async fn handle_socks5_connection(
 
     socket.write_all(&[0x05, 0x00]).await?;
 
-    let mut request_header = [0u8; 4];
-    socket.read_exact(&mut request_header).await?;
+    buf.clear();
 
-    let version = request_header[0];
-    let cmd = request_header[1];
-    let atyp = request_header[3];
+    read_exact_to_buf(&mut socket, &mut buf, 4).await?;
+
+    let version = buf[0];
+    let cmd = buf[1];
+    let atyp = buf[3];
 
     if version != 0x05 {
         return Err("Invalid request version".into());
@@ -524,24 +553,28 @@ async fn handle_socks5_connection(
         return Err("Unsupported command".into());
     }
 
-    let dest_addr = match atyp {
+    let dest_addr_start = 4;
+    let (dest_addr, dest_port_offset) = match atyp {
         0x01 => {
-            let mut ip = [0u8; 4];
-            socket.read_exact(&mut ip).await?;
-            std::net::IpAddr::V4(std::net::Ipv4Addr::from(ip)).to_string()
+            let needed = dest_addr_start + 4;
+            read_exact_to_buf(&mut socket, &mut buf, needed).await?;
+            let octets: [u8; 4] = buf[dest_addr_start..needed].try_into()?;
+            (std::net::IpAddr::V4(std::net::Ipv4Addr::from(octets)).to_string(), needed)
         }
         0x03 => {
-            let mut domain_len_buf = [0u8; 1];
-            socket.read_exact(&mut domain_len_buf).await?;
-            let domain_len = domain_len_buf[0] as usize;
-            let mut domain = vec![0u8; domain_len];
-            socket.read_exact(&mut domain).await?;
-            String::from_utf8(domain)?
+            let needed = dest_addr_start + 1;
+            read_exact_to_buf(&mut socket, &mut buf, needed).await?;
+            let domain_len = buf[dest_addr_start] as usize;
+            let needed = dest_addr_start + 1 + domain_len;
+            read_exact_to_buf(&mut socket, &mut buf, needed).await?;
+            let domain_slice = &buf[dest_addr_start + 1..needed];
+            (std::str::from_utf8(domain_slice)?.to_string(), needed)
         }
         0x04 => {
-            let mut ip = [0u8; 16];
-            socket.read_exact(&mut ip).await?;
-            std::net::IpAddr::V6(std::net::Ipv6Addr::from(ip)).to_string()
+            let needed = dest_addr_start + 16;
+            read_exact_to_buf(&mut socket, &mut buf, needed).await?;
+            let octets: [u8; 16] = buf[dest_addr_start..needed].try_into()?;
+            (std::net::IpAddr::V6(std::net::Ipv6Addr::from(octets)).to_string(), needed)
         }
         _ => {
             socket.write_all(&[0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
@@ -549,9 +582,9 @@ async fn handle_socks5_connection(
         }
     };
 
-    let mut port_buf = [0u8; 2];
-    socket.read_exact(&mut port_buf).await?;
-    let dest_port = u16::from_be_bytes(port_buf);
+    let port_needed = dest_port_offset + 2;
+    read_exact_to_buf(&mut socket, &mut buf, port_needed).await?;
+    let dest_port = u16::from_be_bytes([buf[dest_port_offset], buf[dest_port_offset + 1]]);
 
     if cmd == 0x01 {
         socket.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
@@ -576,7 +609,7 @@ async fn handle_socks5_connection(
         socket.write_all(&reply).await?;
 
         let outbound_tag = {
-            let config_guard = engine_state.config.lock().unwrap();
+            let config_guard = engine_state.config.read();
             let vless_outbound = config_guard.outbounds.iter().find(|o| o.protocol == "vless");
             vless_outbound.map(|o| o.tag.clone())
         };

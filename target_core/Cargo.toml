@@ -17,14 +17,20 @@ thiserror = "1.0"
 async-trait = "0.1"
 url = "2.5"
 rand = "0.8"
-rustls = { version = "0.22", features = ["ring"] }
-tokio-rustls = { version = "0.25", features = ["ring"] }
+rustls = { version = "0.23", features = ["ring"] }
+tokio-rustls = { version = "0.26", features = ["ring"] }
 rustls-pki-types = "1.0"
 rcgen = "0.12"
 rustls-native-certs = "0.8"
 rustls-pemfile = "2.1"
 mimalloc = { version = "0.1", default-features = false }
 socket2 = "0.5"
+parking_lot = "0.12"
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+h3 = "0.0.8"
+h3-quinn = "0.0.10"
+http = "1.0"
+tokio-util = { version = "0.7", features = ["full"] }
 
 [dev-dependencies]
 hex = "0.4"

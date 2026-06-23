@@ -34,7 +34,7 @@ pub async fn dispatch_connection(
     }
 
     let (client_email, outbound_tag, outbound_config) = {
-        let config_guard = engine_state.config.lock().unwrap();
+        let config_guard = engine_state.config.read();
         let email = config_guard
             .inbounds
             .iter()

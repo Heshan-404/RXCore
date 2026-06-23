@@ -56,6 +56,18 @@ pub struct OutboundSettings {
     pub fragment: Option<FragmentSettings>,
     // For VLESS client configuration
     pub vless: Option<VlessClientConfig>,
+    // For Hysteria 2 client configuration
+    pub hysteria2: Option<Hysteria2ClientConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Hysteria2ClientConfig {
+    pub server: String,
+    pub port: u16,
+    pub auth: String,
+    pub up_mbps: Option<u64>,
+    pub down_mbps: Option<u64>,
+    pub tls: Option<TlsClientSettings>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

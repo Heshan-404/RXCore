@@ -10,6 +10,7 @@ use crate::state::EngineState;
 
 pub mod vless;
 pub mod socks5;
+pub mod hysteria_inbound;
 
 #[async_trait]
 pub trait InboundListener: Send + Sync {
@@ -20,6 +21,7 @@ pub fn create_inbound_listener(config: InboundConfig) -> Result<Arc<dyn InboundL
     match config.protocol.as_str() {
         "vless" => Ok(Arc::new(TcpInbound::new(config))),
         "socks" => Ok(Arc::new(socks5::Socks5Inbound::new(config))),
+        "hysteria2" => Ok(Arc::new(hysteria_inbound::HysteriaInbound::new(config))),
         _ => Err(format!("Unsupported inbound protocol: {}", config.protocol).into()),
     }
 }
