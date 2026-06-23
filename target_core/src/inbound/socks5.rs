@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info, warn};
 
@@ -11,6 +11,8 @@ use crate::dispatcher::dispatch_connection;
 use crate::state::EngineState;
 use crate::inbound::InboundListener;
 use async_trait::async_trait;
+
+use socket2::{Socket, Domain, Type, Protocol};
 
 pub struct Socks5Inbound {
     pub config: InboundConfig,
@@ -28,6 +30,8 @@ impl InboundListener for Socks5Inbound {
         let addr = SocketAddr::new(self.config.listen, self.config.port);
         let listener = TcpListener::bind(addr).await?;
         info!(tag = %self.config.tag, address = %addr, "SOCKS5 client inbound listener bound");
+
+        let _ = get_udp_upstream_tx(&engine_state);
 
         let tag = self.config.tag.clone();
 
@@ -104,29 +108,148 @@ impl tokio::io::AsyncWrite for VlessTunnelStream {
     }
 }
 
+#[derive(Hash, PartialEq, Eq, Clone, Debug)]
+pub enum UdpTarget {
+    Ip(std::net::IpAddr, u16),
+    Domain(std::sync::Arc<str>, u16),
+}
 
+impl UdpTarget {
+    pub fn host(&self) -> String {
+        match self {
+            UdpTarget::Ip(ip, _) => ip.to_string(),
+            UdpTarget::Domain(domain, _) => domain.to_string(),
+        }
+    }
 
-async fn connect_to_vless(
+    pub fn port(&self) -> u16 {
+        match self {
+            UdpTarget::Ip(_, port) => *port,
+            UdpTarget::Domain(_, port) => *port,
+        }
+    }
+}
+
+fn current_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+#[derive(Clone)]
+pub struct ClientAssociation {
+    pub client_addr: SocketAddr,
+    pub socket: Arc<tokio::net::UdpSocket>,
+    pub last_active: Arc<std::sync::atomic::AtomicU64>,
+    pub rx_counter: Arc<AtomicU64>,
+}
+
+static ASSOC_MAP: OnceLock<std::sync::Mutex<HashMap<u16, ClientAssociation>>> = OnceLock::new();
+static CLIENT_SESSIONS: OnceLock<std::sync::Mutex<HashMap<SocketAddr, u16>>> = OnceLock::new();
+static NEXT_ASSOC_ID: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(1);
+
+fn get_assoc_map() -> &'static std::sync::Mutex<HashMap<u16, ClientAssociation>> {
+    ASSOC_MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn get_client_sessions() -> &'static std::sync::Mutex<HashMap<SocketAddr, u16>> {
+    CLIENT_SESSIONS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+static CLEANUP_ONCE: std::sync::Once = std::sync::Once::new();
+
+fn spawn_association_cleanup_task() {
+    tokio::spawn(async {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            let now = current_secs();
+            let mut to_remove = Vec::new();
+            
+            {
+                let assoc_guard = get_assoc_map().lock().unwrap();
+                for (&id, assoc) in assoc_guard.iter() {
+                    let last_secs = assoc.last_active.load(Ordering::Relaxed);
+                    if now.saturating_sub(last_secs) > 60 {
+                        to_remove.push((id, assoc.client_addr));
+                    }
+                }
+            }
+            
+            if !to_remove.is_empty() {
+                let mut assoc_guard = get_assoc_map().lock().unwrap();
+                let mut sessions_guard = get_client_sessions().lock().unwrap();
+                for (id, client_addr) in to_remove {
+                    assoc_guard.remove(&id);
+                    sessions_guard.remove(&client_addr);
+                }
+            }
+        }
+    });
+}
+
+fn ensure_cleanup_task_spawned() {
+    CLEANUP_ONCE.call_once(|| {
+        spawn_association_cleanup_task();
+    });
+}
+
+fn get_or_create_association(
+    client_addr: SocketAddr,
+    socket: Arc<tokio::net::UdpSocket>,
+    rx_counter: Arc<AtomicU64>,
+) -> u16 {
+    ensure_cleanup_task_spawned();
+
+    let mut sessions_guard = get_client_sessions().lock().unwrap();
+    let mut assoc_guard = get_assoc_map().lock().unwrap();
+    
+    if let Some(&assoc_id) = sessions_guard.get(&client_addr) {
+        if let Some(assoc) = assoc_guard.get(&assoc_id) {
+            assoc.last_active.store(current_secs(), Ordering::Relaxed);
+        }
+        return assoc_id;
+    }
+    
+    let assoc_id = NEXT_ASSOC_ID.fetch_add(1, Ordering::Relaxed);
+    sessions_guard.insert(client_addr, assoc_id);
+    
+    assoc_guard.insert(assoc_id, ClientAssociation {
+        client_addr,
+        socket,
+        last_active: Arc::new(std::sync::atomic::AtomicU64::new(current_secs())),
+        rx_counter,
+    });
+    
+    assoc_id
+}
+
+pub struct UdpUpstreamPacket {
+    pub assoc_id: u16,
+    pub target: UdpTarget,
+    pub payload: bytes::Bytes,
+}
+
+static UDP_UPSTREAM_TX: OnceLock<tokio::sync::mpsc::Sender<UdpUpstreamPacket>> = OnceLock::new();
+
+fn get_udp_upstream_tx(engine_state: &Arc<EngineState>) -> tokio::sync::mpsc::Sender<UdpUpstreamPacket> {
+    UDP_UPSTREAM_TX.get_or_init(|| {
+        let (tx, rx) = tokio::sync::mpsc::channel(1024);
+        let engine_clone = Arc::clone(engine_state);
+        tokio::spawn(async move {
+            run_global_vless_udp_tunnel(rx, engine_clone).await;
+        });
+        tx
+    }).clone()
+}
+
+async fn establish_raw_vless_stream(
     engine_state: &Arc<EngineState>,
-    dest_addr: &str,
-    dest_port: u16,
 ) -> Result<VlessTunnelStream, Box<dyn std::error::Error + Send + Sync>> {
-    let (vless_config, _outbound_tag) = {
+    let vless_config = {
         let config_guard = engine_state.config.lock().unwrap();
         let vless_outbound = config_guard.outbounds.iter().find(|o| o.protocol == "vless");
-        if let Some(outbound) = vless_outbound {
-            if let Some(ref settings) = outbound.settings {
-                if let Some(ref vless_settings) = settings.vless {
-                    (Some(vless_settings.clone()), Some(outbound.tag.clone()))
-                } else {
-                    (None, None)
-                }
-            } else {
-                (None, None)
-            }
-        } else {
-            (None, None)
-        }
+        vless_outbound.and_then(|o| o.settings.as_ref().and_then(|s| s.vless.clone()))
     };
 
     let cfg = match vless_config {
@@ -139,13 +262,45 @@ async fn connect_to_vless(
     let server_tcp = tokio::time::timeout(std::time::Duration::from_secs(10), dial_fut).await??;
     let _ = server_tcp.set_nodelay(true);
 
-    let mut server_stream = if let Some(ref tls_settings) = cfg.tls {
+    let server_stream = if let Some(ref tls_settings) = cfg.tls {
         let connector = crate::transport::tls::tls_helper::create_client_config(&tls_settings.server_name)?;
         let server_name = rustls::pki_types::ServerName::try_from(tls_settings.server_name.clone())?;
         let tls_stream = connector.connect(server_name, server_tcp).await?;
         VlessTunnelStream::Tls(tls_stream)
     } else {
         VlessTunnelStream::Plain(server_tcp)
+    };
+
+    Ok(server_stream)
+}
+
+fn bind_udp_socket_with_buffers(addr: SocketAddr) -> Result<tokio::net::UdpSocket, Box<dyn std::error::Error + Send + Sync>> {
+    let domain = if addr.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
+    let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
+    socket.set_recv_buffer_size(64 * 1024)?;
+    socket.set_send_buffer_size(64 * 1024)?;
+    socket.bind(&addr.into())?;
+    let std_socket: std::net::UdpSocket = socket.into();
+    let tokio_socket = tokio::net::UdpSocket::from_std(std_socket)?;
+    Ok(tokio_socket)
+}
+
+async fn connect_to_vless(
+    engine_state: &Arc<EngineState>,
+    dest_addr: &str,
+    dest_port: u16,
+) -> Result<VlessTunnelStream, Box<dyn std::error::Error + Send + Sync>> {
+    let mut server_stream = establish_raw_vless_stream(engine_state).await?;
+
+    let vless_config = {
+        let config_guard = engine_state.config.lock().unwrap();
+        let vless_outbound = config_guard.outbounds.iter().find(|o| o.protocol == "vless");
+        vless_outbound.and_then(|o| o.settings.as_ref().and_then(|s| s.vless.clone()))
+    };
+
+    let cfg = match vless_config {
+        Some(c) => c,
+        None => return Err("VLESS config missing".into()),
     };
 
     let uuid = uuid::Uuid::parse_str(&cfg.uuid)?;
@@ -184,146 +339,147 @@ async fn connect_to_vless(
     Ok(server_stream)
 }
 
-async fn run_vless_udp_bridge(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
-    client_udp_socket: Arc<tokio::net::UdpSocket>,
-    client_addr: SocketAddr,
-    dest_addr: String,
-    dest_port: u16,
-    rx_counter: Arc<AtomicU64>,
-    tx_counter: Arc<AtomicU64>,
+async fn run_global_vless_udp_tunnel(
+    mut rx: tokio::sync::mpsc::Receiver<UdpUpstreamPacket>,
     engine_state: Arc<EngineState>,
-    sessions: Arc<std::sync::Mutex<HashMap<(SocketAddr, String, u16), (tokio::sync::mpsc::UnboundedSender<Vec<u8>>, tokio::task::JoinHandle<()>)>>>,
-    session_key: (SocketAddr, String, u16),
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let tunnel = match connect_to_vless(&engine_state, &dest_addr, dest_port).await {
-        Ok(t) => t,
-        Err(e) => {
-            if let Ok(mut guard) = sessions.lock() {
-                guard.remove(&session_key);
-            }
-            return Err(e);
-        }
-    };
-    let (mut read_half, mut write_half) = tokio::io::split(tunnel);
-
-    let local_tx = AtomicU64::new(0);
-    let local_rx = AtomicU64::new(0);
-
-    {
-        let local_tx_ref = &local_tx;
-        let local_rx_ref = &local_rx;
-
-        let upload_task = async move {
-            let mut len_bytes = [0u8; 2];
-            while let Some(payload) = rx.recv().await {
-                let len = payload.len();
-                if len == 0 || len > 65535 {
-                    continue;
-                }
-                len_bytes.copy_from_slice(&(len as u16).to_be_bytes());
-                if write_half.write_all(&len_bytes).await.is_err() {
-                    break;
-                }
-                if write_half.write_all(&payload).await.is_err() {
-                    break;
-                }
-                local_tx_ref.fetch_add(len as u64, Ordering::Relaxed);
+) {
+    loop {
+        let tunnel = match connect_to_vless(&engine_state, "0.0.0.0", 0).await {
+            Ok(t) => t,
+            Err(e) => {
+                warn!(error = %e, "Failed to connect global VLESS UDP tunnel, retrying in 2 seconds...");
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                continue;
             }
         };
 
-        let download_task = async move {
-            let mut buf = [0u8; 300 + 65535];
-            
-            // Pre-calculate SOCKS5 UDP header since dest_addr and dest_port are constant
-            let socks5_atyp = if let Ok(ip) = dest_addr.parse::<std::net::IpAddr>() {
-                match ip {
-                    std::net::IpAddr::V4(_) => 0x01,
-                    std::net::IpAddr::V6(_) => 0x04,
-                }
-            } else {
-                0x03
-            };
+        info!("Global VLESS UDP tunnel connected and active");
 
-            let mut temp_header = [0u8; 262];
-            temp_header[0] = 0x00;
-            temp_header[1] = 0x00;
-            temp_header[2] = 0x00; // FRAG
-            temp_header[3] = socks5_atyp;
+        let (read_half, mut write_half) = tokio::io::split(tunnel);
 
-            let mut offset = 4;
-            match socks5_atyp {
-                0x01 => {
-                    if let Ok(std::net::IpAddr::V4(ipv4)) = dest_addr.parse::<std::net::IpAddr>() {
-                        temp_header[offset..offset+4].copy_from_slice(&ipv4.octets());
-                        offset += 4;
-                    }
-                }
-                0x03 => {
-                    let bytes = dest_addr.as_bytes();
-                    temp_header[offset] = bytes.len() as u8;
-                    offset += 1;
-                    temp_header[offset..offset+bytes.len()].copy_from_slice(bytes);
-                    offset += bytes.len();
-                }
-                0x04 => {
-                    if let Ok(std::net::IpAddr::V6(ipv6)) = dest_addr.parse::<std::net::IpAddr>() {
-                        temp_header[offset..offset+16].copy_from_slice(&ipv6.octets());
-                        offset += 16;
-                    }
-                }
-                _ => {}
-            }
-            temp_header[offset..offset+2].copy_from_slice(&dest_port.to_be_bytes());
-            offset += 2;
-
-            let header_start = 300 - offset;
-            buf[header_start..300].copy_from_slice(&temp_header[..offset]);
-
-            let mut len_bytes = [0u8; 2];
+        let downstream_task = async {
+            let mut buf_reader = BufReader::with_capacity(65536, read_half);
+            let mut header_buf = [0u8; 4];
+            let mut payload_buf = [0u8; 65535];
             loop {
-                if read_half.read_exact(&mut len_bytes).await.is_err() {
+                if buf_reader.read_exact(&mut header_buf).await.is_err() {
                     break;
                 }
-                let len = u16::from_be_bytes(len_bytes) as usize;
-                if len == 0 || len > 65535 {
+                let total_len = u16::from_be_bytes([header_buf[0], header_buf[1]]) as usize;
+                let assoc_id = u16::from_be_bytes([header_buf[2], header_buf[3]]);
+                if total_len < 2 || total_len > 65535 {
                     break;
                 }
-                if read_half.read_exact(&mut buf[300..300 + len]).await.is_err() {
+                let frame_len = total_len - 2;
+                if buf_reader.read_exact(&mut payload_buf[..frame_len]).await.is_err() {
                     break;
                 }
-                
-                if let Err(e) = client_udp_socket.send_to(&buf[header_start..300 + len], client_addr).await {
-                    warn!(error = %e, "Failed to send SOCKS5 UDP response to client");
+
+                let atyp = payload_buf[0];
+                let mut offset = 1;
+                match atyp {
+                    0x01 => {
+                        offset += 4 + 2;
+                    }
+                    0x03 => {
+                        let len = payload_buf[offset] as usize;
+                        offset += 1 + len + 2;
+                    }
+                    0x04 => {
+                        offset += 16 + 2;
+                    }
+                    _ => continue,
+                };
+
+                if offset > frame_len {
                     continue;
                 }
-                local_rx_ref.fetch_add(len as u64, Ordering::Relaxed);
+
+                let payload = &payload_buf[offset..frame_len];
+
+                let association = {
+                    let guard = get_assoc_map().lock().unwrap();
+                    if let Some(assoc) = guard.get(&assoc_id) {
+                        assoc.last_active.store(current_secs(), Ordering::Relaxed);
+                        Some(assoc.clone())
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(assoc) = association {
+                    let mut reply_buf = [0u8; 300 + 65535];
+                    reply_buf[0] = 0x00;
+                    reply_buf[1] = 0x00;
+                    reply_buf[2] = 0x00;
+                    
+                    let header_len = 3 + offset;
+                    reply_buf[3..header_len].copy_from_slice(&payload_buf[..offset]);
+                    reply_buf[header_len..header_len + payload.len()].copy_from_slice(payload);
+
+                    if assoc.socket.send_to(&reply_buf[..header_len + payload.len()], assoc.client_addr).await.is_ok() {
+                        assoc.rx_counter.fetch_add(payload.len() as u64, Ordering::Relaxed);
+                        if let Some(stats) = engine_state.get_user_stats(&None) {
+                            stats.rx.fetch_add(payload.len() as u64, Ordering::Relaxed);
+                        }
+                    }
+                }
             }
+        };
+
+        let upstream_task = async {
+            while let Some(packet) = rx.recv().await {
+                let target_port = packet.target.port();
+                let mut header = bytes::BytesMut::with_capacity(30);
+                header.extend_from_slice(&packet.assoc_id.to_be_bytes());
+
+                match &packet.target {
+                    UdpTarget::Ip(ip, _) => {
+                        match ip {
+                            std::net::IpAddr::V4(ipv4) => {
+                                header.extend_from_slice(&[1u8]);
+                                header.extend_from_slice(&ipv4.octets());
+                            }
+                            std::net::IpAddr::V6(ipv6) => {
+                                header.extend_from_slice(&[4u8]);
+                                header.extend_from_slice(&ipv6.octets());
+                            }
+                        }
+                    }
+                    UdpTarget::Domain(domain, _) => {
+                        header.extend_from_slice(&[3u8]);
+                        header.extend_from_slice(&[domain.len() as u8]);
+                        header.extend_from_slice(domain.as_bytes());
+                    }
+                }
+                header.extend_from_slice(&target_port.to_be_bytes());
+
+                let total_len = header.len() + packet.payload.len();
+                let mut send_buf = bytes::BytesMut::with_capacity(2 + total_len);
+                send_buf.extend_from_slice(&(total_len as u16).to_be_bytes());
+                send_buf.extend_from_slice(&header);
+                send_buf.extend_from_slice(&packet.payload);
+
+                if write_half.write_all(&send_buf).await.is_err() {
+                    return false;
+                }
+            }
+            true
         };
 
         tokio::select! {
-            _ = upload_task => {}
-            _ = download_task => {}
+            _ = downstream_task => {
+                warn!("Global VLESS UDP tunnel read closed or failed. Reconnecting...");
+            }
+            res = upstream_task => {
+                if res {
+                    break;
+                } else {
+                    warn!("Global VLESS UDP tunnel write failed. Reconnecting...");
+                }
+            }
         }
     }
-
-    let final_tx = local_tx.load(Ordering::Relaxed);
-    let final_rx = local_rx.load(Ordering::Relaxed);
-
-    tx_counter.fetch_add(final_tx, Ordering::Relaxed);
-    rx_counter.fetch_add(final_rx, Ordering::Relaxed);
-
-    let target_email: Option<String> = None;
-    if let Some(stats) = engine_state.get_user_stats(&target_email) {
-        stats.tx.fetch_add(final_tx, Ordering::Relaxed);
-        stats.rx.fetch_add(final_rx, Ordering::Relaxed);
-    }
-
-    if let Ok(mut guard) = sessions.lock() {
-        guard.remove(&session_key);
-    }
-
-    Ok(())
 }
 
 async fn handle_socks5_connection(
@@ -402,7 +558,7 @@ async fn handle_socks5_connection(
         let dummy_uuid = [0u8; 16];
         dispatch_connection(crate::inbound::InboundTransportStream::Plain(socket), client_addr, dest_addr, dest_port, inbound_tag, dummy_uuid, 1, engine_state).await?;
     } else {
-        let client_udp_socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+        let client_udp_socket = bind_udp_socket_with_buffers(SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0))?;
         let local_addr = socket.local_addr()?;
         let bound_port = client_udp_socket.local_addr()?.port();
         let mut reply = vec![0x05, 0x00, 0x00];
@@ -445,8 +601,6 @@ async fn handle_socks5_connection(
         let socket_arc = Arc::new(client_udp_socket);
         let socket_rx = Arc::clone(&socket_arc);
         
-        let sessions: Arc<std::sync::Mutex<HashMap<(SocketAddr, String, u16), (tokio::sync::mpsc::UnboundedSender<Vec<u8>>, tokio::task::JoinHandle<()>)>>> = Arc::new(std::sync::Mutex::new(HashMap::new()));
-
         let mut recv_buf = [0u8; 65535];
         let mut tcp_buf = [0u8; 1024];
 
@@ -463,7 +617,7 @@ async fn handle_socks5_connection(
                 res = socket_rx.recv_from(&mut recv_buf) => {
                     let (n, client_addr) = match res {
                         Ok(r) => r,
-                        Err(_) => break,
+                        Err(_) => continue,
                     };
                     if n < 4 {
                         continue;
@@ -480,116 +634,73 @@ async fn handle_socks5_connection(
                         continue;
                     }
                     let mut offset = 4;
-                    let (target_addr, _addr_len) = match atyp {
+                    let target = match atyp {
                         0x01 => {
-                            if n < 10 { continue; }
-                            let ip_slice = match recv_buf.get(offset..offset+4) {
-                                Some(s) => s,
-                                None => continue,
-                            };
-                            let mut ip = [0u8; 4];
-                            ip.copy_from_slice(ip_slice);
+                            if n < offset + 4 + 2 { continue; }
+                            let mut ip_bytes = [0u8; 4];
+                            ip_bytes.copy_from_slice(&recv_buf[offset..offset+4]);
                             offset += 4;
-                            (std::net::IpAddr::V4(std::net::Ipv4Addr::from(ip)).to_string(), 4)
+                            let port = u16::from_be_bytes([recv_buf[offset], recv_buf[offset+1]]);
+                            offset += 2;
+                            UdpTarget::Ip(std::net::IpAddr::V4(std::net::Ipv4Addr::from(ip_bytes)), port)
+                        }
+                        0x04 => {
+                            if n < offset + 16 + 2 { continue; }
+                            let mut ip_bytes = [0u8; 16];
+                            ip_bytes.copy_from_slice(&recv_buf[offset..offset+16]);
+                            offset += 16;
+                            let port = u16::from_be_bytes([recv_buf[offset], recv_buf[offset+1]]);
+                            offset += 2;
+                            UdpTarget::Ip(std::net::IpAddr::V6(std::net::Ipv6Addr::from(ip_bytes)), port)
                         }
                         0x03 => {
                             if n < offset + 1 { continue; }
-                            let len = match recv_buf.get(offset) {
-                                Some(&l) => l as usize,
-                                None => continue,
-                            };
+                            let len = recv_buf[offset] as usize;
                             offset += 1;
                             if n < offset + len + 2 { continue; }
-                            let domain_slice = match recv_buf.get(offset..offset+len) {
-                                Some(s) => s,
-                                None => continue,
-                            };
-                            let mut domain = vec![0u8; len];
-                            domain.copy_from_slice(domain_slice);
+                            let domain_bytes = &recv_buf[offset..offset+len];
                             offset += len;
-                            let dest_addr = match String::from_utf8(domain) {
-                                Ok(d) => d,
+                            let port = u16::from_be_bytes([recv_buf[offset], recv_buf[offset+1]]);
+                            offset += 2;
+                            let domain_str = match std::str::from_utf8(domain_bytes) {
+                                Ok(s) => s,
                                 Err(_) => continue,
                             };
-                            (dest_addr, len as u8)
-                        }
-                        0x04 => {
-                            if n < 22 { continue; }
-                            let ip_slice = match recv_buf.get(offset..offset+16) {
-                                Some(s) => s,
-                                None => continue,
-                            };
-                            let mut ip = [0u8; 16];
-                            ip.copy_from_slice(ip_slice);
-                            offset += 16;
-                            (std::net::IpAddr::V6(std::net::Ipv6Addr::from(ip)).to_string(), 16)
+                            UdpTarget::Domain(std::sync::Arc::from(domain_str), port)
                         }
                         _ => continue,
                     };
 
-                    if n < offset + 2 { continue; }
-                    let port_slice = match recv_buf.get(offset..offset+2) {
-                        Some(s) => s,
-                        None => continue,
-                    };
-                    let port = u16::from_be_bytes([port_slice[0], port_slice[1]]);
-                    offset += 2;
-
-                    let payload = match recv_buf.get(offset..n) {
+                    let payload_slice = match recv_buf.get(offset..n) {
                         Some(p) => p,
                         None => continue,
                     };
+                    let payload = bytes::Bytes::copy_from_slice(payload_slice);
 
-                    let session_key = (client_addr, target_addr.clone(), port);
-                    let mut spawned_new = false;
-                    
-                    {
-                        let guard = sessions.lock().unwrap();
-                        if let Some((tx, _)) = guard.get(&session_key) {
-                            if tx.send(payload.to_vec()).is_ok() {
-                                spawned_new = true;
-                            }
+                    let assoc_id = get_or_create_association(client_addr, Arc::clone(&socket_arc), Arc::clone(&rx_counter));
+                    let packet = UdpUpstreamPacket {
+                        assoc_id,
+                        target,
+                        payload,
+                    };
+
+                    if let Err(e) = get_udp_upstream_tx(&engine_state).try_send(packet) {
+                        warn!(
+                            target = "socks5_udp",
+                            client = %client_addr,
+                            error = %e,
+                            "SOCKS5 UDP packet dropped: upstream global tunnel queue is full"
+                        );
+                    } else {
+                        tx_counter.fetch_add(payload_slice.len() as u64, Ordering::Relaxed);
+                        if let Some(stats) = engine_state.get_user_stats(&None) {
+                            stats.tx.fetch_add(payload_slice.len() as u64, Ordering::Relaxed);
                         }
-                    }
-
-                    if !spawned_new {
-                        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                        
-                        let socket_clone = Arc::clone(&socket_rx);
-                        let engine_clone = Arc::clone(&engine_state);
-                        let dest_addr_clone = target_addr.clone();
-                        let dest_port = port;
-                        let rx_counter_clone = Arc::clone(&rx_counter);
-                        let tx_counter_clone = Arc::clone(&tx_counter);
-                        let sessions_clone = Arc::clone(&sessions);
-                        let session_key_clone = session_key.clone();
-
-                        let handle = tokio::spawn(async move {
-                            let _ = run_vless_udp_bridge(
-                                rx,
-                                socket_clone,
-                                client_addr,
-                                dest_addr_clone,
-                                dest_port,
-                                rx_counter_clone,
-                                tx_counter_clone,
-                                engine_clone,
-                                sessions_clone,
-                                session_key_clone,
-                            ).await;
-                        });
-                        let _ = tx.send(payload.to_vec());
-                        let mut guard = sessions.lock().unwrap();
-                        guard.insert(session_key, (tx, handle));
                     }
                 }
             }
         }
         
-        let mut sessions_guard = sessions.lock().unwrap();
-        for (_, (_, handle)) in sessions_guard.drain() {
-            handle.abort();
-        }
         engine_state.deregister_connection(&conn_id);
     }
     Ok(())
