@@ -33,6 +33,7 @@ http = "1.0"
 tokio-util = { version = "0.7", features = ["full"] }
 core_affinity = "0.8"
 libc = "0.2"
+nix = { version = "0.28", features = ["fs", "zerocopy"] }
 
 [dev-dependencies]
 hex = "0.4"

@@ -54,27 +54,84 @@ impl tokio::io::AsyncWrite for OutboundTransportStream {
 
 pub struct MuxFrame {
     pub stream_id: u32,
-    pub cmd: u8, // 0 = Data, 1 = Open, 2 = Close
+    pub cmd: u8,
     pub payload: bytes::Bytes,
+    pub is_udp: bool,
+}
+
+async fn write_frame<W: AsyncWriteExt + Unpin>(
+    writer: &mut W,
+    frame: MuxFrame,
+    header_buf: &mut [u8; 6],
+) -> std::io::Result<()> {
+    let payload_len = frame.payload.len();
+    if payload_len > 65535 {
+        return Ok(());
+    }
+    let header = (frame.stream_id & 0x3F_FF_FF_FF) | ((frame.cmd as u32) << 30);
+    header_buf[0..4].copy_from_slice(&header.to_be_bytes());
+    header_buf[4..6].copy_from_slice(&(payload_len as u16).to_be_bytes());
+    writer.write_all(header_buf).await?;
+    if payload_len > 0 {
+        writer.write_all(&frame.payload).await?;
+    }
+    Ok(())
 }
 
 async fn run_connection_writer<W: AsyncWriteExt + Unpin>(
     mut writer: W,
-    mut rx_frames: mpsc::Receiver<MuxFrame>,
+    mut rx_high: mpsc::Receiver<MuxFrame>,
+    mut rx_low: mpsc::Receiver<MuxFrame>,
 ) -> std::io::Result<()> {
     let mut header_buf = [0u8; 6];
-    while let Some(frame) = rx_frames.recv().await {
-        let payload_len = frame.payload.len();
-        if payload_len > 65535 {
-            continue;
-        }
-        let header = (frame.stream_id & 0x3F_FF_FF_FF) | ((frame.cmd as u32) << 30);
-        header_buf[0..4].copy_from_slice(&header.to_be_bytes());
-        header_buf[4..6].copy_from_slice(&(payload_len as u16).to_be_bytes());
-        writer.write_all(&header_buf).await?;
-        if payload_len > 0 {
-            writer.write_all(&frame.payload).await?;
-        }
+    let mut consecutive_high = 0u32;
+    loop {
+        let frame = if consecutive_high >= 32 {
+            tokio::select! {
+                biased;
+                res = rx_low.recv() => {
+                    match res {
+                        Some(f) => {
+                            consecutive_high = 0;
+                            f
+                        }
+                        None => break,
+                    }
+                }
+                res = rx_high.recv() => {
+                    match res {
+                        Some(f) => {
+                            consecutive_high += 1;
+                            f
+                        }
+                        None => break,
+                    }
+                }
+            }
+        } else {
+            tokio::select! {
+                biased;
+                res = rx_high.recv() => {
+                    match res {
+                        Some(f) => {
+                            consecutive_high += 1;
+                            f
+                        }
+                        None => break,
+                    }
+                }
+                res = rx_low.recv() => {
+                    match res {
+                        Some(f) => {
+                            consecutive_high = 0;
+                            f
+                        }
+                        None => break,
+                    }
+                }
+            }
+        };
+        write_frame(&mut writer, frame, &mut header_buf).await?;
     }
     Ok(())
 }
@@ -140,12 +197,19 @@ pub struct OutboundSession {
 }
 
 pub struct MuxConnection {
-    tx_frames: mpsc::Sender<MuxFrame>,
+    tx_high: mpsc::Sender<MuxFrame>,
+    tx_low: mpsc::Sender<MuxFrame>,
     active_streams: Arc<parking_lot::Mutex<HashMap<u32, mpsc::Sender<Bytes>>>>,
     next_stream_id: Arc<std::sync::atomic::AtomicU32>,
     stream_count: Arc<std::sync::atomic::AtomicU32>,
     writer_handle: tokio::task::JoinHandle<()>,
     reader_handle: tokio::task::JoinHandle<()>,
+}
+
+impl MuxConnection {
+    pub fn send_channels(&self) -> (mpsc::Sender<MuxFrame>, mpsc::Sender<MuxFrame>) {
+        (self.tx_high.clone(), self.tx_low.clone())
+    }
 }
 
 pub struct MuxVirtualStream {
@@ -155,6 +219,7 @@ pub struct MuxVirtualStream {
     current_read_chunk: Option<Bytes>,
     conn_stream_count: Arc<std::sync::atomic::AtomicU32>,
     active_streams: Arc<parking_lot::Mutex<HashMap<u32, mpsc::Sender<Bytes>>>>,
+    is_udp: bool,
 }
 
 impl tokio::io::AsyncRead for MuxVirtualStream {
@@ -204,6 +269,7 @@ impl tokio::io::AsyncWrite for MuxVirtualStream {
                     stream_id: self.stream_id,
                     cmd: 0,
                     payload: Bytes::copy_from_slice(buf),
+                    is_udp: self.is_udp,
                 };
                 if self.tx_frames.send_item(frame).is_err() {
                     return std::task::Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "Connection closed")));
@@ -227,6 +293,7 @@ impl tokio::io::AsyncWrite for MuxVirtualStream {
                 stream_id: self.stream_id,
                 cmd: 2,
                 payload: Bytes::new(),
+                is_udp: self.is_udp,
             });
         }
         std::task::Poll::Ready(Ok(()))
@@ -240,6 +307,7 @@ impl Drop for MuxVirtualStream {
                 stream_id: self.stream_id,
                 cmd: 2,
                 payload: Bytes::new(),
+                is_udp: self.is_udp,
             });
         }
         self.active_streams.lock().remove(&self.stream_id);
@@ -262,7 +330,7 @@ pub struct MuxPool {
 enum LeaseAction {
     Lease {
         stream_id: u32,
-        tx_frames: mpsc::Sender<MuxFrame>,
+        tx_frames: tokio_util::sync::PollSender<MuxFrame>,
         rx_data: mpsc::Receiver<Bytes>,
         conn_stream_count: Arc<std::sync::atomic::AtomicU32>,
         active_streams: Arc<parking_lot::Mutex<HashMap<u32, mpsc::Sender<Bytes>>>>,
@@ -369,12 +437,13 @@ impl MuxPool {
         let (r, w) = tokio::io::split(stream);
         let buf_r = tokio::io::BufReader::with_capacity(65536, r);
 
-        let (tx_frames, rx_frames) = mpsc::channel::<MuxFrame>(256);
+        let (tx_high, rx_high) = mpsc::channel::<MuxFrame>(128);
+        let (tx_low, rx_low) = mpsc::channel::<MuxFrame>(1024);
         let active_streams = Arc::new(parking_lot::Mutex::new(HashMap::new()));
         let active_streams_clone = Arc::clone(&active_streams);
 
         let writer_handle = tokio::spawn(async move {
-            let _ = run_connection_writer(w, rx_frames).await;
+            let _ = run_connection_writer(w, rx_high, rx_low).await;
         });
 
         let reader_handle = tokio::spawn(async move {
@@ -382,7 +451,8 @@ impl MuxPool {
         });
 
         Ok(MuxConnection {
-            tx_frames,
+            tx_high,
+            tx_low,
             active_streams,
             next_stream_id: Arc::new(std::sync::atomic::AtomicU32::new(1)),
             stream_count: Arc::new(std::sync::atomic::AtomicU32::new(0)),
@@ -407,6 +477,7 @@ impl MuxPool {
         &self,
         target_host: &str,
         target_port: u16,
+        is_udp: bool,
     ) -> Result<MuxVirtualStream, Box<dyn std::error::Error + Send + Sync>> {
         loop {
             let action = {
@@ -431,7 +502,12 @@ impl MuxPool {
                     let (tx_data, rx_data) = mpsc::channel::<Bytes>(128);
                     conn.active_streams.lock().insert(stream_id, tx_data);
 
-                    let tx_frames = conn.tx_frames.clone();
+                    let raw_tx = if is_udp {
+                        conn.tx_high.clone()
+                    } else {
+                        conn.tx_low.clone()
+                    };
+                    let tx_frames = tokio_util::sync::PollSender::new(raw_tx);
                     let conn_stream_count = Arc::clone(&conn.stream_count);
                     let active_streams = Arc::clone(&conn.active_streams);
 
@@ -462,16 +538,18 @@ impl MuxPool {
                         stream_id,
                         cmd: 1,
                         payload: Bytes::from(target_str),
+                        is_udp,
                     };
-                    tx_frames.send(open_frame).await?;
+                    tx_frames.get_ref().unwrap().clone().send(open_frame).await?;
 
                     return Ok(MuxVirtualStream {
                         stream_id,
-                        tx_frames: tokio_util::sync::PollSender::new(tx_frames),
+                        tx_frames,
                         rx_data,
                         current_read_chunk: None,
                         conn_stream_count,
                         active_streams,
+                        is_udp,
                     });
                 }
                 LeaseAction::ConnectNew => {
@@ -485,3 +563,43 @@ impl MuxPool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn test_aqm_scheduler() {
+        let (tx_high, rx_high) = mpsc::channel(128);
+        let (tx_low, rx_low) = mpsc::channel(1024);
+
+        for i in 0..35 {
+            let _ = tx_high.send(MuxFrame {
+                stream_id: i,
+                cmd: 0,
+                payload: bytes::Bytes::new(),
+                is_udp: true,
+            }).await;
+        }
+
+        let _ = tx_low.send(MuxFrame {
+            stream_id: 999,
+            cmd: 0,
+            payload: bytes::Bytes::new(),
+            is_udp: false,
+        }).await;
+
+        let writer = tokio::io::sink();
+        
+        let handle = tokio::spawn(async move {
+            let _ = run_connection_writer(writer, rx_high, rx_low).await;
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        drop(tx_high);
+        drop(tx_low);
+        let _ = handle.await;
+    }
+}
+
