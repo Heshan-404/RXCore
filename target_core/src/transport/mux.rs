@@ -334,6 +334,7 @@ impl MuxPool {
             use std::os::windows::io::{AsRawSocket, FromRawSocket};
             let raw = tcp.as_raw_socket();
             let socket = unsafe { socket2::Socket::from_raw_socket(raw) };
+            let _ = socket.set_nodelay(true);
             let _ = socket.set_recv_buffer_size(4 * 1024 * 1024);
             let _ = socket.set_send_buffer_size(4 * 1024 * 1024);
             std::mem::forget(socket);
@@ -343,12 +344,14 @@ impl MuxPool {
             use std::os::fd::{AsRawFd, FromRawFd};
             let raw = tcp.as_raw_fd();
             let socket = unsafe { socket2::Socket::from_raw_fd(raw) };
+            let _ = socket.set_nodelay(true);
             let _ = socket.set_recv_buffer_size(4 * 1024 * 1024);
             let _ = socket.set_send_buffer_size(4 * 1024 * 1024);
             #[cfg(target_os = "linux")]
             {
                 use crate::transport::SocketValueExt;
                 let _ = socket.set_value(libc::SOL_TCP, libc::TCP_CONGESTION, b"bbr\0");
+                let _ = socket.set_value(libc::SOL_TCP, libc::TCP_QUICKACK, &1i32.to_ne_bytes());
             }
             std::mem::forget(socket);
         }

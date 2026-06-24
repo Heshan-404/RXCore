@@ -124,11 +124,13 @@ pub async fn dial_tcp_with_bind(
         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
         Err(e) => return Err(e.into()),
     }
+    let _ = socket.set_nodelay(true);
     let _ = socket.set_recv_buffer_size(131072);
     let _ = socket.set_send_buffer_size(131072);
     #[cfg(target_os = "linux")]
     {
         let _ = socket.set_value(libc::SOL_TCP, libc::TCP_CONGESTION, b"bbr\0");
+        let _ = socket.set_value(libc::SOL_TCP, libc::TCP_QUICKACK, &1i32.to_ne_bytes());
     }
     let std_tcp: std::net::TcpStream = socket.into();
     let tcp = TcpStream::from_std(std_tcp)?;
