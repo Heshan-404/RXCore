@@ -28,6 +28,21 @@ pub async fn dispatch_connection(
             let _ = stream.get_ref().0.set_nodelay(true);
         }
     }
+
+    let is_udp = cmd == 2;
+    if is_udp && dest_port == 443 {
+        tracing::info!("QUIC traffic detected on UDP 443, dropping connection to force TCP fallback for destination: {}:443", dest_addr);
+        let handler = crate::outbound::BlackholeOutbound::new();
+        let rx_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let tx_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let conn_id = Uuid::new_v4();
+        let engine = Arc::clone(&engine_state);
+        tokio::spawn(async move {
+            use crate::outbound::OutboundHandler;
+            let _ = handler.handle(inbound_stream, &dest_addr, dest_port, rx_counter, tx_counter, &engine, &None, &conn_id).await;
+        });
+        return Ok(());
+    }
     let sni = sniff_sni(&inbound_stream).await;
     if let Some(ref parsed_sni) = sni {
         info!(sni = %parsed_sni, "Parsed SNI successfully from connection");
@@ -70,7 +85,15 @@ pub async fn dispatch_connection(
         Some("vless") => get_outbound_handler(outbound_config.as_ref(), is_udp)?,
         _ => {
             if is_udp {
-                Box::new(crate::outbound::udp::UdpOutbound::new())
+                let proxy = outbound_config.as_ref().and_then(|c| {
+                    if c.protocol == "freedom" {
+                        None
+                    } else {
+                        c.outbound_proxy.clone()
+                    }
+                });
+                let bind_ip = outbound_config.as_ref().and_then(|c| c.bind_address.clone());
+                Box::new(crate::outbound::udp::UdpOutbound::new(proxy, bind_ip))
             } else {
                 get_outbound_handler(outbound_config.as_ref(), false)?
             }

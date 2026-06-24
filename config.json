@@ -1,0 +1,86 @@
+{
+  "inbounds": [
+    {
+      "tag": "vless-inbound",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "ad60c2b2-cc0c-492a-89aa-c92330a10cc9",
+            "email": "test_user@example.com"
+          }
+        ]
+      },
+      "stream_settings": {
+        "security": "tls",
+        "tls_settings": {
+          "server_name": "www.tiktok.com",
+          "certificate_file": null,
+          "key_file": null
+        }
+      }
+    },
+    {
+      "tag": "hysteria2-inbound",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "hysteria2",
+      "settings": {
+        "clients": [
+          {
+            "id": "ad60c2b2-cc0c-492a-89aa-c92330a10cc9",
+            "email": "test_user@example.com"
+          }
+        ]
+      },
+      "stream_settings": {
+        "security": "tls",
+        "tls_settings": {
+          "server_name": "www.tiktok.com",
+          "certificate_file": null,
+          "key_file": null
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "freedom",
+      "protocol": "freedom",
+      "outbound_proxy": "127.0.0.1:40000"
+    },
+    {
+      "tag": "bypass-sni",
+      "protocol": "fragment",
+      "settings": {
+        "fragment": {
+          "packets": "1-5",
+          "length": "1-10",
+          "interval": 20
+        }
+      }
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "domain": [
+          "tiktok.com",
+          "tiktokcdn.com",
+          "byteoversea.com",
+          "ibyteimg.com",
+          "ibytedtos.com",
+          "musical.ly",
+          "online-fix.me"
+        ],
+        "outbound_tag": "freedom"
+      }
+    ]
+  },
+  "api": {
+    "listen": "0.0.0.0",
+    "port": 9091
+  }
+}

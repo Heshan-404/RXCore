@@ -122,6 +122,14 @@ async fn run_connection_reader<R: AsyncReadExt + Unpin>(
                 _ => {}
             }
         }
+
+        if main_buf.capacity() > 256 * 1024 {
+            let mut new_buf = bytes::BytesMut::with_capacity(65536);
+            if !main_buf.is_empty() {
+                new_buf.extend_from_slice(&main_buf);
+            }
+            main_buf = new_buf;
+        }
     }
 }
 
@@ -246,6 +254,8 @@ pub struct MuxPool {
     min_connections: usize,
     max_connections: usize,
     max_streams_per_connection: u32,
+    outbound_proxy: Option<String>,
+    bind_address: Option<String>,
     connections: Arc<parking_lot::Mutex<Vec<MuxConnection>>>,
 }
 
@@ -269,6 +279,8 @@ impl MuxPool {
         min_connections: usize,
         max_connections: usize,
         max_streams_per_connection: u32,
+        outbound_proxy: Option<String>,
+        bind_address: Option<String>,
     ) -> Self {
         let pool = Self {
             server_addr,
@@ -277,6 +289,8 @@ impl MuxPool {
             min_connections,
             max_connections,
             max_streams_per_connection,
+            outbound_proxy,
+            bind_address,
             connections: Arc::new(parking_lot::Mutex::new(Vec::new())),
         };
 
@@ -296,19 +310,43 @@ impl MuxPool {
             min_connections: self.min_connections,
             max_connections: self.max_connections,
             max_streams_per_connection: self.max_streams_per_connection,
+            outbound_proxy: self.outbound_proxy.clone(),
+            bind_address: self.bind_address.clone(),
             connections: Arc::clone(&self.connections),
         }
     }
 
     async fn connect_one(&self) -> Result<MuxConnection, Box<dyn std::error::Error + Send + Sync>> {
-        let tcp = TcpStream::connect(&self.server_addr).await?;
-        let std_tcp = tcp.into_std()?;
-        let socket = socket2::Socket::from(std_tcp);
-        let _ = socket.set_recv_buffer_size(4 * 1024 * 1024);
-        let _ = socket.set_send_buffer_size(4 * 1024 * 1024);
-        let _ = socket.set_nodelay(true);
-        let std_tcp_configured: std::net::TcpStream = socket.into();
-        let tcp = TcpStream::from_std(std_tcp_configured)?;
+        let host = if let Some(pos) = self.server_addr.find(':') {
+            &self.server_addr[..pos]
+        } else {
+            &self.server_addr
+        };
+        let port = if let Some(pos) = self.server_addr.find(':') {
+            self.server_addr[pos + 1..].parse::<u16>().unwrap_or(80)
+        } else {
+            80
+        };
+        let tcp = crate::transport::dial_tcp(host, port, &self.bind_address, &self.outbound_proxy).await?;
+        let _ = tcp.set_nodelay(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::{AsRawSocket, FromRawSocket};
+            let raw = tcp.as_raw_socket();
+            let socket = unsafe { socket2::Socket::from_raw_socket(raw) };
+            let _ = socket.set_recv_buffer_size(4 * 1024 * 1024);
+            let _ = socket.set_send_buffer_size(4 * 1024 * 1024);
+            std::mem::forget(socket);
+        }
+        #[cfg(not(windows))]
+        {
+            use std::os::fd::{AsRawFd, FromRawFd};
+            let raw = tcp.as_raw_fd();
+            let socket = unsafe { socket2::Socket::from_raw_fd(raw) };
+            let _ = socket.set_recv_buffer_size(4 * 1024 * 1024);
+            let _ = socket.set_send_buffer_size(4 * 1024 * 1024);
+            std::mem::forget(socket);
+        }
 
         let stream = if self.use_tls {
             let sni_str = self.sni.as_deref().unwrap_or("localhost");
@@ -321,6 +359,7 @@ impl MuxPool {
         };
 
         let (r, w) = tokio::io::split(stream);
+        let buf_r = tokio::io::BufReader::with_capacity(65536, r);
 
         let (tx_frames, rx_frames) = mpsc::channel::<MuxFrame>(256);
         let active_streams = Arc::new(parking_lot::Mutex::new(HashMap::new()));
@@ -331,7 +370,7 @@ impl MuxPool {
         });
 
         let reader_handle = tokio::spawn(async move {
-            let _ = run_connection_reader(r, active_streams_clone).await;
+            let _ = run_connection_reader(buf_r, active_streams_clone).await;
         });
 
         Ok(MuxConnection {

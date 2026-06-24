@@ -9,11 +9,14 @@ use crate::inbound::InboundTransportStream;
 use crate::outbound::OutboundHandler;
 use crate::state::EngineState;
 
-pub struct FreedomOutbound;
+pub struct FreedomOutbound {
+    outbound_proxy: Option<String>,
+    bind_address: Option<String>,
+}
 
 impl FreedomOutbound {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(outbound_proxy: Option<String>, bind_address: Option<String>) -> Self {
+        Self { outbound_proxy, bind_address }
     }
 }
 
@@ -30,9 +33,8 @@ impl OutboundHandler for FreedomOutbound {
         client_email: &Option<String>,
         _conn_id: &Uuid,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Resolve host and establish connection
-        let resolve_addr = format!("{}:{}", dest_addr, dest_port);
-        let dial_fut = TcpStream::connect(&resolve_addr);
+        tracing::info!(proxy = ?self.outbound_proxy, dest = %dest_addr, port = dest_port, "Freedom dialing TCP");
+        let dial_fut = crate::transport::dial_tcp(dest_addr, dest_port, &self.bind_address, &self.outbound_proxy);
         let outbound_stream = match timeout(std::time::Duration::from_secs(10), dial_fut).await {
             Ok(conn_res) => conn_res?,
             Err(_) => return Err("Dial destination timed out".into()),

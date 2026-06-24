@@ -24,9 +24,31 @@ pub mod tls_helper {
             for cert in native_certs.certs {
                 let _ = root_store.add(cert);
             }
-            let config = rustls::ClientConfig::builder()
+            let mut provider = rustls::crypto::ring::default_provider();
+            provider.cipher_suites.sort_by_key(|suite| {
+                let code = u16::from(suite.suite());
+                match code {
+                    0x1301 => 0,
+                    0x1302 => 1,
+                    0x1303 => 2,
+                    0xC02B => 3,
+                    0xC02F => 4,
+                    0xC02C => 5,
+                    0xC030 => 6,
+                    0xCCA9 => 7,
+                    0xCCAA => 8,
+                    _ => 100,
+                }
+            });
+            let mut config = rustls::ClientConfig::builder_with_provider(Arc::new(provider))
+                .with_safe_default_protocol_versions()
+                .unwrap()
                 .with_root_certificates(root_store)
                 .with_no_client_auth();
+            config.alpn_protocols = vec![
+                b"h2".to_vec(),
+                vec![104, 116, 116, 112, 47, 49, 46, 49],
+            ];
             TlsConnector::from(Arc::new(config))
         });
         Ok(connector.clone())

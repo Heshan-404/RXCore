@@ -32,7 +32,7 @@ pub trait OutboundHandler: Send + Sync {
 pub fn get_outbound_handler(config: Option<&OutboundConfig>, is_udp: bool) -> Result<Box<dyn OutboundHandler>, Box<dyn std::error::Error + Send + Sync>> {
     match config {
         Some(c) => match c.protocol.as_str() {
-            "freedom" => Ok(Box::new(freedom::FreedomOutbound::new())),
+            "freedom" => Ok(Box::new(freedom::FreedomOutbound::new(c.outbound_proxy.clone(), c.bind_address.clone()))),
             "fragment" => {
                 let settings = c.settings.as_ref().and_then(|s| s.fragment.clone());
                 Ok(Box::new(fragment::FragmentOutbound::new(settings)))
@@ -40,7 +40,7 @@ pub fn get_outbound_handler(config: Option<&OutboundConfig>, is_udp: bool) -> Re
             "vless" => {
                 let settings = c.settings.as_ref().and_then(|s| s.vless.clone())
                     .ok_or_else(|| Box::<dyn std::error::Error + Send + Sync>::from("VLESS client outbound configuration missing"))?;
-                Ok(Box::new(vless_client::VlessClientOutbound::new(settings, is_udp)))
+                Ok(Box::new(vless_client::VlessClientOutbound::new(settings, is_udp, c.outbound_proxy.clone(), c.bind_address.clone())))
             }
             "hysteria2" => {
                 let settings = c.settings.as_ref().and_then(|s| s.hysteria2.clone())
@@ -48,9 +48,9 @@ pub fn get_outbound_handler(config: Option<&OutboundConfig>, is_udp: bool) -> Re
                 Ok(Box::new(hysteria_outbound::Hysteria2ClientOutbound::new(settings)))
             }
             "blackhole" => Ok(Box::new(BlackholeOutbound::new())),
-            _ => Ok(Box::new(freedom::FreedomOutbound::new())),
+            _ => Ok(Box::new(freedom::FreedomOutbound::new(None, None))),
         },
-        None => Ok(Box::new(freedom::FreedomOutbound::new())),
+        None => Ok(Box::new(freedom::FreedomOutbound::new(None, None))),
     }
 }
 

@@ -106,7 +106,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     "#;
 
-    let initial_config: config::Config = serde_json::from_str(default_config_json)?;
+    let config_path = std::path::Path::new("config.json");
+    let initial_config: config::Config = if config_path.exists() {
+        info!("Loading configuration from config.json");
+        let content = std::fs::read_to_string(config_path)?;
+        serde_json::from_str(&content)?
+    } else {
+        info!("Using default built-in configuration");
+        serde_json::from_str(default_config_json)?
+    };
     let api_listen = initial_config.api.listen;
     let api_port = initial_config.api.port;
 

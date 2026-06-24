@@ -18,11 +18,18 @@ use crate::transport::tls::tls_helper::create_client_config;
 pub struct VlessClientOutbound {
     pub config: VlessClientConfig,
     pub is_udp: bool,
+    pub outbound_proxy: Option<String>,
+    pub bind_address: Option<String>,
 }
 
 impl VlessClientOutbound {
-    pub fn new(config: VlessClientConfig, is_udp: bool) -> Self {
-        Self { config, is_udp }
+    pub fn new(
+        config: VlessClientConfig,
+        is_udp: bool,
+        outbound_proxy: Option<String>,
+        bind_address: Option<String>,
+    ) -> Self {
+        Self { config, is_udp, outbound_proxy, bind_address }
     }
 }
 
@@ -85,8 +92,7 @@ impl OutboundHandler for VlessClientOutbound {
         _conn_id: &Uuid,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // 1. Establish low-latency TCP connection to the VLESS server
-        let server_addr = format!("{}:{}", self.config.server, self.config.port);
-        let dial_fut = TcpStream::connect(&server_addr);
+        let dial_fut = crate::transport::dial_tcp(&self.config.server, self.config.port, &self.bind_address, &self.outbound_proxy);
         let server_tcp = match timeout(std::time::Duration::from_secs(10), dial_fut).await {
             Ok(conn_res) => conn_res?,
             Err(_) => return Err("Dial VLESS server timed out".into()),
@@ -150,15 +156,22 @@ impl OutboundHandler for VlessClientOutbound {
         }
 
         let user_stats = engine_state.get_user_stats(client_email);
-        let mut inbound_mut = inbound_stream;
-        let mut outbound_mut = server_stream;
-        if let Ok((tx_bytes, rx_bytes)) = tokio::io::copy_bidirectional(&mut inbound_mut, &mut outbound_mut).await {
-            rx_counter.fetch_add(rx_bytes, std::sync::atomic::Ordering::Relaxed);
-            tx_counter.fetch_add(tx_bytes, std::sync::atomic::Ordering::Relaxed);
-            if let Some(ref stats) = user_stats {
-                stats.rx.fetch_add(rx_bytes, std::sync::atomic::Ordering::Relaxed);
-                stats.tx.fetch_add(tx_bytes, std::sync::atomic::Ordering::Relaxed);
-            }
+        let (out_r, mut out_w) = tokio::io::split(server_stream);
+        let mut buf_out_r = tokio::io::BufReader::with_capacity(65536, out_r);
+        let (mut in_r, mut in_w) = tokio::io::split(inbound_stream);
+
+        let mut in_to_out = tokio::io::copy(&mut in_r, &mut out_w);
+        let mut out_to_in = tokio::io::copy(&mut buf_out_r, &mut in_w);
+
+        let (tx_res, rx_res) = tokio::join!(in_to_out, out_to_in);
+        let tx_bytes = tx_res.unwrap_or(0);
+        let rx_bytes = rx_res.unwrap_or(0);
+
+        rx_counter.fetch_add(rx_bytes, std::sync::atomic::Ordering::Relaxed);
+        tx_counter.fetch_add(tx_bytes, std::sync::atomic::Ordering::Relaxed);
+        if let Some(ref stats) = user_stats {
+            stats.rx.fetch_add(rx_bytes, std::sync::atomic::Ordering::Relaxed);
+            stats.tx.fetch_add(tx_bytes, std::sync::atomic::Ordering::Relaxed);
         }
         Ok(())
     }

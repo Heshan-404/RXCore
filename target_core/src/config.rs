@@ -48,6 +48,8 @@ pub struct OutboundConfig {
     pub tag: String,
     pub protocol: String, // "freedom", "fragment", "blackhole", "vless"
     pub settings: Option<OutboundSettings>,
+    pub outbound_proxy: Option<String>,
+    pub bind_address: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

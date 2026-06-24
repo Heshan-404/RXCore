@@ -5,20 +5,22 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UdpSocket;
 use uuid::Uuid;
 use bytes::BufMut;
+use std::net::SocketAddr;
+use std::collections::HashMap;
+use socket2::{Socket, Domain, Type, Protocol};
 
 use crate::inbound::InboundTransportStream;
 use crate::outbound::OutboundHandler;
 use crate::state::EngineState;
 
-use std::net::SocketAddr;
-use std::collections::HashMap;
-use socket2::{Socket, Domain, Type, Protocol};
-
-pub struct UdpOutbound;
+pub struct UdpOutbound {
+    outbound_proxy: Option<String>,
+    bind_address: Option<String>,
+}
 
 impl UdpOutbound {
-    pub fn new() -> Self {
-        Self
+    pub fn new(outbound_proxy: Option<String>, bind_address: Option<String>) -> Self {
+        Self { outbound_proxy, bind_address }
     }
 }
 
@@ -46,6 +48,8 @@ struct OutboundSession {
     socket: Arc<tokio::net::UdpSocket>,
     handle: tokio::task::JoinHandle<()>,
     last_active: Arc<AtomicU64>,
+    send_target: SocketAddr,
+    _assoc: Option<tokio::net::TcpStream>,
 }
 
 #[async_trait]
@@ -71,6 +75,45 @@ impl OutboundHandler for UdpOutbound {
     }
 }
 
+pub async fn create_outbound_udp(
+    dest_host: &str,
+    dest_port: u16,
+    outbound_proxy: &Option<String>,
+    bind_ip: &Option<String>,
+) -> Result<(Arc<UdpSocket>, Option<tokio::net::TcpStream>, SocketAddr), Box<dyn std::error::Error + Send + Sync>> {
+    if let Some(ref proxy) = outbound_proxy {
+        let assoc = crate::transport::socks5_udp_associate(proxy, bind_ip).await?;
+        let bind_addr = if assoc.proxy_udp_addr.is_ipv4() {
+            SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
+        } else {
+            SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 0)
+        };
+        let socket = UdpSocket::bind(bind_addr).await?;
+        Ok((Arc::new(socket), Some(assoc.association_stream), assoc.proxy_udp_addr))
+    } else {
+        let target_addr = if let Ok(ip) = dest_host.parse::<std::net::IpAddr>() {
+            SocketAddr::new(ip, dest_port)
+        } else {
+            let addrs = tokio::net::lookup_host(format!("{}:{}", dest_host, dest_port)).await?;
+            addrs.into_iter().next().ok_or("Failed to resolve UDP target")?
+        };
+        let bind_addr = if target_addr.is_ipv4() {
+            SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
+        } else {
+            SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 0)
+        };
+        let domain = if target_addr.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
+        let socket = socket2::Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
+        let _ = socket.set_recv_buffer_size(64 * 1024);
+        let _ = socket.set_send_buffer_size(64 * 1024);
+        socket.bind(&bind_addr.into())?;
+        let std_socket: std::net::UdpSocket = socket.into();
+        std_socket.set_nonblocking(true)?;
+        let tokio_socket = UdpSocket::from_std(std_socket)?;
+        Ok((Arc::new(tokio_socket), None, target_addr))
+    }
+}
+
 impl UdpOutbound {
     async fn handle_packetaddr(
         &self,
@@ -81,10 +124,8 @@ impl UdpOutbound {
         client_email: &Option<String>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let user_stats = engine_state.get_user_stats(client_email);
-
         let (mut in_reader, mut in_writer) = tokio::io::split(inbound_stream);
         let mut buf = bytes::BytesMut::with_capacity(65536);
-
         let (downlink_tx, mut downlink_rx) = tokio::sync::mpsc::channel::<bytes::Bytes>(128);
 
         tokio::spawn(async move {
@@ -190,39 +231,14 @@ impl UdpOutbound {
                     Arc::clone(&session.socket)
                 }
                 None => {
-                    let bind_addr = if dest_socket_addr.is_ipv4() {
-                        SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
-                    } else {
-                        SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 0)
-                    };
-                    let domain = if dest_socket_addr.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
-                    let socket = match Socket::new(domain, Type::DGRAM, Some(Protocol::UDP)) {
-                        Ok(s) => s,
+                    let (tokio_socket, assoc_stream, send_target) = match create_outbound_udp(&dest_host, dest_port, &self.outbound_proxy, &self.bind_address).await {
+                        Ok(res) => res,
                         Err(_) => {
                             buf_offset = payload_needed;
                             continue;
                         }
                     };
-                    if socket.set_recv_buffer_size(64 * 1024).is_err()
-                        || socket.set_send_buffer_size(64 * 1024).is_err()
-                        || socket.bind(&bind_addr.into()).is_err()
-                    {
-                        buf_offset = payload_needed;
-                        continue;
-                    }
-                    let std_socket: std::net::UdpSocket = socket.into();
-                    if std_socket.set_nonblocking(true).is_err() {
-                        buf_offset = payload_needed;
-                        continue;
-                    }
-                    let tokio_socket = match UdpSocket::from_std(std_socket) {
-                        Ok(s) => s,
-                        Err(_) => {
-                            buf_offset = payload_needed;
-                            continue;
-                        }
-                    };
-                    let arc_socket = Arc::new(tokio_socket);
+                    let arc_socket = tokio_socket;
                     let last_active = Arc::new(AtomicU64::new(current_secs()));
 
                     let socket_clone = Arc::clone(&arc_socket);
@@ -230,6 +246,7 @@ impl UdpOutbound {
                     let user_stats_clone = user_stats.clone();
                     let downlink_tx_clone = downlink_tx.clone();
                     let last_active_clone = Arc::clone(&last_active);
+                    let is_socks = self.outbound_proxy.is_some();
 
                     let handle = tokio::spawn(async move {
                         let mut udp_buf = [0u8; 65535];
@@ -240,8 +257,20 @@ impl UdpOutbound {
                                 Err(_) => continue,
                                 Ok((n, remote_addr)) => {
                                     last_active_clone.store(current_secs(), Ordering::Relaxed);
+                                    let (payload, payload_len, actual_src) = if is_socks {
+                                        if let Ok((src_ip, src_port, offset)) = crate::transport::parse_socks5_udp(&udp_buf[..n]) {
+                                            (&udp_buf[offset..n], n - offset, SocketAddr::new(src_ip, src_port))
+                                        } else {
+                                            continue;
+                                        }
+                                    } else {
+                                        (&udp_buf[..n], n, remote_addr)
+                                    };
+
                                     send_buf.clear();
-                                    match remote_addr.ip() {
+                                    send_buf.put_u16(0);
+                                    send_buf.put_u16(0);
+                                    match actual_src.ip() {
                                         std::net::IpAddr::V4(ipv4) => {
                                             send_buf.put_u8(1);
                                             send_buf.put_slice(&ipv4.octets());
@@ -251,9 +280,11 @@ impl UdpOutbound {
                                             send_buf.put_slice(&ipv6.octets());
                                         }
                                     }
-                                    send_buf.put_u16(remote_addr.port());
-                                    send_buf.put_u16(n as u16);
-                                    send_buf.put_slice(&udp_buf[..n]);
+                                    send_buf.put_u16(actual_src.port());
+
+                                    let total_len = send_buf.len() - 2 + payload_len;
+                                    send_buf[0..2].copy_from_slice(&(total_len as u16).to_be_bytes());
+                                    send_buf.put_slice(payload);
 
                                     let frozen = send_buf.split().freeze();
                                     if downlink_tx_clone.try_send(frozen).is_err() {
@@ -262,9 +293,9 @@ impl UdpOutbound {
                                         }
                                         continue;
                                     }
-                                    rx_counter_clone.fetch_add(n as u64, Ordering::Relaxed);
+                                    rx_counter_clone.fetch_add(payload_len as u64, Ordering::Relaxed);
                                     if let Some(ref stats) = user_stats_clone {
-                                        stats.rx.fetch_add(n as u64, Ordering::Relaxed);
+                                        stats.rx.fetch_add(payload_len as u64, Ordering::Relaxed);
                                     }
                                 }
                             }
@@ -275,13 +306,28 @@ impl UdpOutbound {
                         socket: Arc::clone(&arc_socket),
                         handle,
                         last_active,
+                        send_target,
+                        _assoc: assoc_stream,
                     });
 
                     arc_socket
                 }
             };
 
-            if socket.send_to(payload_slice, dest_socket_addr).await.is_ok() {
+            let is_socks = self.outbound_proxy.is_some();
+            let send_res = if is_socks {
+                if let Some(session) = sockets.get(&dest_socket_addr) {
+                    let mut socks5_buf = Vec::with_capacity(payload_slice.len() + 30);
+                    crate::transport::wrap_socks5_udp_host(&dest_host, dest_port, payload_slice, &mut socks5_buf);
+                    socket.send_to(&socks5_buf, session.send_target).await
+                } else {
+                    Err(std::io::Error::new(std::io::ErrorKind::Other, "Session missing"))
+                }
+            } else {
+                socket.send_to(payload_slice, dest_socket_addr).await
+            };
+
+            if send_res.is_ok() {
                 tx_counter.fetch_add(payload_len as u64, Ordering::Relaxed);
                 if let Some(ref stats) = user_stats {
                     stats.tx.fetch_add(payload_len as u64, Ordering::Relaxed);
@@ -314,7 +360,6 @@ impl UdpOutbound {
         for (_, session) in sockets.drain() {
             session.handle.abort();
         }
-
         Ok(())
     }
 
@@ -329,30 +374,8 @@ impl UdpOutbound {
         client_email: &Option<String>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let user_stats = engine_state.get_user_stats(client_email);
-
-        let target_addr = if let Ok(ip) = dest_addr.parse::<std::net::IpAddr>() {
-            SocketAddr::new(ip, dest_port)
-        } else {
-            let addrs = tokio::net::lookup_host(format!("{}:{}", dest_addr, dest_port)).await?;
-            addrs.into_iter().next().ok_or("Failed to resolve standard UDP target")?
-        };
-
-        let bind_addr = if target_addr.is_ipv4() {
-            SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
-        } else {
-            SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 0)
-        };
-        let domain = if target_addr.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
-        let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
-        socket.set_recv_buffer_size(64 * 1024)?;
-        socket.set_send_buffer_size(64 * 1024)?;
-        socket.bind(&bind_addr.into())?;
-        
-        let std_socket: std::net::UdpSocket = socket.into();
-        std_socket.set_nonblocking(true)?;
-        let tokio_socket = tokio::net::UdpSocket::from_std(std_socket)?;
-        tokio_socket.connect(target_addr).await?;
-        let socket_arc = Arc::new(tokio_socket);
+        let (socket_arc, assoc_stream, send_target) = create_outbound_udp(dest_addr, dest_port, &self.outbound_proxy, &self.bind_address).await?;
+        socket_arc.connect(send_target).await?;
 
         let (in_reader, mut in_writer) = tokio::io::split(inbound_stream);
         let mut buf_reader = BufReader::with_capacity(65536, in_reader);
@@ -360,6 +383,8 @@ impl UdpOutbound {
         let socket_clone = Arc::clone(&socket_arc);
         let rx_counter_clone = Arc::clone(&rx_counter);
         let user_stats_clone = user_stats.clone();
+        let is_socks = self.outbound_proxy.is_some();
+        let _assoc = assoc_stream;
 
         let downlink_task = tokio::spawn(async move {
             let mut udp_buf = [0u8; 65535];
@@ -369,17 +394,26 @@ impl UdpOutbound {
                     Ok(0) => break,
                     Err(_) => continue,
                     Ok(n) => {
+                        let (payload, payload_len) = if is_socks {
+                            if let Ok((_src_ip, _src_port, offset)) = crate::transport::parse_socks5_udp(&udp_buf[..n]) {
+                                (&udp_buf[offset..n], n - offset)
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            (&udp_buf[..n], n)
+                        };
                         send_buf.clear();
-                        send_buf.put_u16(n as u16);
-                        send_buf.put_slice(&udp_buf[..n]);
+                        send_buf.put_u16(payload_len as u16);
+                        send_buf.put_slice(payload);
 
                         let frozen = send_buf.split().freeze();
                         if in_writer.write_all(&frozen).await.is_err() {
                             break;
                         }
-                        rx_counter_clone.fetch_add(n as u64, Ordering::Relaxed);
+                        rx_counter_clone.fetch_add(payload_len as u64, Ordering::Relaxed);
                         if let Some(ref stats) = user_stats_clone {
-                            stats.rx.fetch_add(n as u64, Ordering::Relaxed);
+                            stats.rx.fetch_add(payload_len as u64, Ordering::Relaxed);
                         }
                     }
                 }
@@ -388,6 +422,7 @@ impl UdpOutbound {
 
         let mut header_buf = [0u8; 2];
         let mut payload_buf = [0u8; 65535];
+        let mut socks5_buf = Vec::with_capacity(65535);
 
         loop {
             if buf_reader.read_exact(&mut header_buf).await.is_err() {
@@ -401,7 +436,14 @@ impl UdpOutbound {
                 break;
             }
 
-            if socket_arc.send(&payload_buf[..frame_len]).await.is_ok() {
+            let send_res = if is_socks {
+                crate::transport::wrap_socks5_udp_host(dest_addr, dest_port, &payload_buf[..frame_len], &mut socks5_buf);
+                socket_arc.send(&socks5_buf).await
+            } else {
+                socket_arc.send(&payload_buf[..frame_len]).await
+            };
+
+            if send_res.is_ok() {
                 tx_counter.fetch_add(frame_len as u64, Ordering::Relaxed);
                 if let Some(ref stats) = user_stats {
                     stats.tx.fetch_add(frame_len as u64, Ordering::Relaxed);
@@ -422,10 +464,8 @@ impl UdpOutbound {
         client_email: &Option<String>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let user_stats = engine_state.get_user_stats(client_email);
-
         let (in_reader, mut in_writer) = tokio::io::split(inbound_stream);
         let mut buf_reader = BufReader::with_capacity(65536, in_reader);
-
         let (downlink_tx, mut downlink_rx) = tokio::sync::mpsc::channel::<bytes::Bytes>(128);
 
         tokio::spawn(async move {
@@ -457,7 +497,7 @@ impl UdpOutbound {
 
             let atyp = payload_buf[0];
             let mut offset = 1;
-            let target_addr = match atyp {
+            let (target_host, target_port, target_addr) = match atyp {
                 0x01 => {
                     if frame_len < offset + 4 + 2 { continue; }
                     let mut ip = [0u8; 4];
@@ -465,7 +505,8 @@ impl UdpOutbound {
                     offset += 4;
                     let port = u16::from_be_bytes([payload_buf[offset], payload_buf[offset+1]]);
                     offset += 2;
-                    SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::from(ip)), port)
+                    let sa = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::from(ip)), port);
+                    (sa.ip().to_string(), port, sa)
                 }
                 0x04 => {
                     if frame_len < offset + 16 + 2 { continue; }
@@ -474,7 +515,8 @@ impl UdpOutbound {
                     offset += 16;
                     let port = u16::from_be_bytes([payload_buf[offset], payload_buf[offset+1]]);
                     offset += 2;
-                    SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::from(ip)), port)
+                    let sa = SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::from(ip)), port);
+                    (sa.ip().to_string(), port, sa)
                 }
                 0x03 => {
                     if frame_len < offset + 1 { continue; }
@@ -486,7 +528,7 @@ impl UdpOutbound {
                     let port = u16::from_be_bytes([payload_buf[offset], payload_buf[offset+1]]);
                     offset += 2;
                     let domain_str = match std::str::from_utf8(domain_bytes) {
-                        Ok(s) => s,
+                        Ok(s) => s.to_string(),
                         Err(_) => continue,
                     };
                     let addrs = match tokio::net::lookup_host(format!("{}:{}", domain_str, port)).await {
@@ -494,7 +536,7 @@ impl UdpOutbound {
                         Err(_) => continue,
                     };
                     match addrs.into_iter().next() {
-                        Some(a) => a,
+                        Some(a) => (domain_str, port, a),
                         None => continue,
                     }
                 }
@@ -506,6 +548,7 @@ impl UdpOutbound {
             }
 
             let payload = &payload_buf[offset..frame_len];
+            let payload_len = payload.len();
 
             let socket = match sockets.get(&assoc_id) {
                 Some(session) => {
@@ -513,31 +556,11 @@ impl UdpOutbound {
                     Arc::clone(&session.socket)
                 }
                 None => {
-                    let bind_addr = if target_addr.is_ipv4() {
-                        SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
-                    } else {
-                        SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 0)
-                    };
-                    let domain = if target_addr.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
-                    let socket = match Socket::new(domain, Type::DGRAM, Some(Protocol::UDP)) {
-                        Ok(s) => s,
+                    let (tokio_socket, assoc_stream, send_target) = match create_outbound_udp(&target_host, target_port, &self.outbound_proxy, &self.bind_address).await {
+                        Ok(res) => res,
                         Err(_) => continue,
                     };
-                    if socket.set_recv_buffer_size(64 * 1024).is_err()
-                        || socket.set_send_buffer_size(64 * 1024).is_err()
-                        || socket.bind(&bind_addr.into()).is_err()
-                    {
-                        continue;
-                    }
-                    let std_socket: std::net::UdpSocket = socket.into();
-                    if std_socket.set_nonblocking(true).is_err() {
-                        continue;
-                    }
-                    let tokio_socket = match UdpSocket::from_std(std_socket) {
-                        Ok(s) => s,
-                        Err(_) => continue,
-                    };
-                    let arc_socket = Arc::new(tokio_socket);
+                    let arc_socket = tokio_socket;
                     let last_active = Arc::new(AtomicU64::new(current_secs()));
 
                     let socket_clone = Arc::clone(&arc_socket);
@@ -545,6 +568,7 @@ impl UdpOutbound {
                     let user_stats_clone = user_stats.clone();
                     let downlink_tx_clone = downlink_tx.clone();
                     let last_active_clone = Arc::clone(&last_active);
+                    let is_socks = self.outbound_proxy.is_some();
 
                     let handle = tokio::spawn(async move {
                         let mut udp_buf = [0u8; 65535];
@@ -555,16 +579,20 @@ impl UdpOutbound {
                                 Err(_) => continue,
                                 Ok((n, remote_addr)) => {
                                     last_active_clone.store(current_secs(), Ordering::Relaxed);
+                                    let (payload, payload_len, actual_src) = if is_socks {
+                                        if let Ok((src_ip, src_port, offset)) = crate::transport::parse_socks5_udp(&udp_buf[..n]) {
+                                            (&udp_buf[offset..n], n - offset, SocketAddr::new(src_ip, src_port))
+                                        } else {
+                                            continue;
+                                        }
+                                    } else {
+                                        (&udp_buf[..n], n, remote_addr)
+                                    };
+
                                     send_buf.clear();
-                                    
-                                    // Reserve 2 bytes for total frame length
                                     send_buf.put_u16(0);
-                                    
-                                    // Write association ID
                                     send_buf.put_u16(assoc_id);
-                                    
-                                    // Write remote address
-                                    match remote_addr.ip() {
+                                    match actual_src.ip() {
                                         std::net::IpAddr::V4(ipv4) => {
                                             send_buf.put_u8(1);
                                             send_buf.put_slice(&ipv4.octets());
@@ -574,27 +602,22 @@ impl UdpOutbound {
                                             send_buf.put_slice(&ipv6.octets());
                                         }
                                     }
-                                    send_buf.put_u16(remote_addr.port());
+                                    send_buf.put_u16(actual_src.port());
 
-                                    // Compute total frame length (excluding the length prefix itself)
-                                    let total_len = send_buf.len() - 2 + n;
-                                    
-                                    // Fill in the length prefix
+                                    let total_len = send_buf.len() - 2 + payload_len;
                                     send_buf[0..2].copy_from_slice(&(total_len as u16).to_be_bytes());
-                                    
-                                    // Append payload
-                                    send_buf.put_slice(&udp_buf[..n]);
+                                    send_buf.put_slice(payload);
 
                                     let frozen = send_buf.split().freeze();
                                     if downlink_tx_clone.try_send(frozen).is_err() {
                                         if downlink_tx_clone.is_closed() {
                                             break;
                                         }
-                                        continue; // Drop packet
+                                        continue;
                                     }
-                                    rx_counter_clone.fetch_add(n as u64, Ordering::Relaxed);
+                                    rx_counter_clone.fetch_add(payload_len as u64, Ordering::Relaxed);
                                     if let Some(ref stats) = user_stats_clone {
-                                        stats.rx.fetch_add(n as u64, Ordering::Relaxed);
+                                        stats.rx.fetch_add(payload_len as u64, Ordering::Relaxed);
                                     }
                                 }
                             }
@@ -605,16 +628,31 @@ impl UdpOutbound {
                         socket: Arc::clone(&arc_socket),
                         handle,
                         last_active,
+                        send_target,
+                        _assoc: assoc_stream,
                     });
 
                     arc_socket
                 }
             };
 
-            if socket.send_to(payload, target_addr).await.is_ok() {
-                tx_counter.fetch_add(payload.len() as u64, Ordering::Relaxed);
+            let is_socks = self.outbound_proxy.is_some();
+            let send_res = if is_socks {
+                if let Some(session) = sockets.get(&assoc_id) {
+                    let mut socks5_buf = Vec::with_capacity(payload.len() + 30);
+                    crate::transport::wrap_socks5_udp_host(&target_host, target_port, payload, &mut socks5_buf);
+                    socket.send_to(&socks5_buf, session.send_target).await
+                } else {
+                    Err(std::io::Error::new(std::io::ErrorKind::Other, "Session missing"))
+                }
+            } else {
+                socket.send_to(payload, target_addr).await
+            };
+
+            if send_res.is_ok() {
+                tx_counter.fetch_add(payload_len as u64, Ordering::Relaxed);
                 if let Some(ref stats) = user_stats {
-                    stats.tx.fetch_add(payload.len() as u64, Ordering::Relaxed);
+                    stats.tx.fetch_add(payload_len as u64, Ordering::Relaxed);
                 }
             }
 
@@ -638,7 +676,6 @@ impl UdpOutbound {
         for (_, session) in sockets.drain() {
             session.handle.abort();
         }
-
         Ok(())
     }
 }
