@@ -24,13 +24,15 @@ rcgen = "0.12"
 rustls-native-certs = "0.8"
 rustls-pemfile = "2.1"
 mimalloc = { version = "0.1", default-features = false }
-socket2 = "0.5"
+socket2 = { version = "0.5", features = ["all"] }
 parking_lot = "0.12"
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 h3 = "0.0.8"
 h3-quinn = "0.0.10"
 http = "1.0"
 tokio-util = { version = "0.7", features = ["full"] }
+core_affinity = "0.8"
+libc = "0.2"
 
 [dev-dependencies]
 hex = "0.4"

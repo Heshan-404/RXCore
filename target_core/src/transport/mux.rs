@@ -345,6 +345,11 @@ impl MuxPool {
             let socket = unsafe { socket2::Socket::from_raw_fd(raw) };
             let _ = socket.set_recv_buffer_size(4 * 1024 * 1024);
             let _ = socket.set_send_buffer_size(4 * 1024 * 1024);
+            #[cfg(target_os = "linux")]
+            {
+                use crate::transport::SocketValueExt;
+                let _ = socket.set_value(libc::SOL_TCP, libc::TCP_CONGESTION, b"bbr\0");
+            }
             std::mem::forget(socket);
         }
 

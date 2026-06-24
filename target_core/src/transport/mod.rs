@@ -124,6 +124,12 @@ pub async fn dial_tcp_with_bind(
         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
         Err(e) => return Err(e.into()),
     }
+    let _ = socket.set_recv_buffer_size(131072);
+    let _ = socket.set_send_buffer_size(131072);
+    #[cfg(target_os = "linux")]
+    {
+        let _ = socket.set_value(libc::SOL_TCP, libc::TCP_CONGESTION, b"bbr\0");
+    }
     let std_tcp: std::net::TcpStream = socket.into();
     let tcp = TcpStream::from_std(std_tcp)?;
     Ok(tcp)
@@ -265,4 +271,31 @@ pub fn parse_socks5_udp(
     let src_port = u16::from_be_bytes([buf[offset], buf[offset + 1]]);
     offset += 2;
     Ok((src_ip, src_port, offset))
+}
+
+#[cfg(target_os = "linux")]
+pub trait SocketValueExt {
+    fn set_value(&self, level: i32, name: i32, value: &[u8]) -> std::io::Result<()>;
+}
+
+#[cfg(target_os = "linux")]
+impl SocketValueExt for socket2::Socket {
+    fn set_value(&self, level: i32, name: i32, value: &[u8]) -> std::io::Result<()> {
+        use std::os::fd::AsRawFd;
+        let fd = self.as_raw_fd();
+        let res = unsafe {
+            libc::setsockopt(
+                fd,
+                level,
+                name,
+                value.as_ptr() as *const libc::c_void,
+                value.len() as libc::socklen_t,
+            )
+        };
+        if res == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
 }

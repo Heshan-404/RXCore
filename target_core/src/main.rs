@@ -15,9 +15,22 @@ pub mod state;
 pub mod transport;
 
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let _ = rustls::crypto::ring::default_provider().install_default();
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .on_thread_start(|| {
+            static CORE_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let core_ids = core_affinity::get_core_ids().unwrap_or_default();
+            if !core_ids.is_empty() {
+                let idx = CORE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let core_id = core_ids[idx % core_ids.len()];
+                core_affinity::set_for_current(core_id);
+            }
+        })
+        .build()?;
+
+    runtime.block_on(async {
+        let _ = rustls::crypto::ring::default_provider().install_default();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
@@ -148,4 +161,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     api_server.start(api_listen, api_port).await?;
 
     Ok(())
+    })
 }
