@@ -160,8 +160,8 @@ impl OutboundHandler for VlessClientOutbound {
         let mut buf_out_r = tokio::io::BufReader::with_capacity(65536, out_r);
         let (mut in_r, mut in_w) = tokio::io::split(inbound_stream);
 
-        let mut in_to_out = tokio::io::copy(&mut in_r, &mut out_w);
-        let mut out_to_in = tokio::io::copy(&mut buf_out_r, &mut in_w);
+        let in_to_out = tokio::io::copy(&mut in_r, &mut out_w);
+        let out_to_in = tokio::io::copy(&mut buf_out_r, &mut in_w);
 
         let (tx_res, rx_res) = tokio::join!(in_to_out, out_to_in);
         let tx_bytes = tx_res.unwrap_or(0);
