@@ -34,6 +34,10 @@ tokio-util = { version = "0.7", features = ["full"] }
 core_affinity = "0.8"
 libc = "0.2"
 nix = { version = "0.28", features = ["fs", "zerocopy"] }
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.52"
+wintun = "0.4"
+etherparse = "0.13"
 
 [dev-dependencies]
 hex = "0.4"
