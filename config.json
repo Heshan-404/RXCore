@@ -8,7 +8,7 @@
       "settings": {}
     },
     {
-      "tag": "vless-inbound",
+      "tag": "vless-inbound-443",
       "listen": "0.0.0.0",
       "port": 443,
       "protocol": "vless",
@@ -17,20 +17,36 @@
           {
             "id": "ad60c2b2-cc0c-492a-89aa-c92330a10cc9",
             "email": "test_user@example.com"
+          },
+          {
+            "id": "c5a5e3f1-f09b-449e-b98a-ea4c75d7967b",
+            "email": "user1_aka_ms@example.com"
+          },
+          {
+            "id": "d8b2e347-19ab-48d8-9df2-50d4d29381e4",
+            "email": "user2_aka_ms@example.com"
+          },
+          {
+            "id": "2fa7d10e-a5e2-48cf-9a05-ea78a4819d9b",
+            "email": "user3_aka_ms@example.com"
+          },
+          {
+            "id": "9a8f6d71-bf02-4cbe-85b9-4a9f93ee72bf",
+            "email": "user4_whatsapp@example.com"
           }
         ]
       },
       "stream_settings": {
         "security": "tls",
         "tls_settings": {
-          "server_name": "www.tiktok.com",
+          "server_name": "aks.ms",
           "certificate_file": null,
           "key_file": null
         }
       }
     },
     {
-      "tag": "hysteria2-inbound",
+      "tag": "hysteria2-inbound-443",
       "listen": "0.0.0.0",
       "port": 443,
       "protocol": "hysteria2",
@@ -39,13 +55,105 @@
           {
             "id": "ad60c2b2-cc0c-492a-89aa-c92330a10cc9",
             "email": "test_user@example.com"
+          },
+          {
+            "id": "c5a5e3f1-f09b-449e-b98a-ea4c75d7967b",
+            "email": "user1_aka_ms@example.com"
+          },
+          {
+            "id": "d8b2e347-19ab-48d8-9df2-50d4d29381e4",
+            "email": "user2_aka_ms@example.com"
+          },
+          {
+            "id": "2fa7d10e-a5e2-48cf-9a05-ea78a4819d9b",
+            "email": "user3_aka_ms@example.com"
+          },
+          {
+            "id": "9a8f6d71-bf02-4cbe-85b9-4a9f93ee72bf",
+            "email": "user4_whatsapp@example.com"
           }
         ]
       },
       "stream_settings": {
         "security": "tls",
         "tls_settings": {
-          "server_name": "www.tiktok.com",
+          "server_name": "aks.ms",
+          "certificate_file": null,
+          "key_file": null
+        }
+      }
+    },
+    {
+      "tag": "vless-inbound-444",
+      "listen": "0.0.0.0",
+      "port": 444,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "ad60c2b2-cc0c-492a-89aa-c92330a10cc9",
+            "email": "test_user@example.com"
+          },
+          {
+            "id": "c5a5e3f1-f09b-449e-b98a-ea4c75d7967b",
+            "email": "user1_aka_ms@example.com"
+          },
+          {
+            "id": "d8b2e347-19ab-48d8-9df2-50d4d29381e4",
+            "email": "user2_aka_ms@example.com"
+          },
+          {
+            "id": "2fa7d10e-a5e2-48cf-9a05-ea78a4819d9b",
+            "email": "user3_aka_ms@example.com"
+          },
+          {
+            "id": "9a8f6d71-bf02-4cbe-85b9-4a9f93ee72bf",
+            "email": "user4_whatsapp@example.com"
+          }
+        ]
+      },
+      "stream_settings": {
+        "security": "tls",
+        "tls_settings": {
+          "server_name": "aks.ms",
+          "certificate_file": null,
+          "key_file": null
+        }
+      }
+    },
+    {
+      "tag": "hysteria2-inbound-444",
+      "listen": "0.0.0.0",
+      "port": 444,
+      "protocol": "hysteria2",
+      "settings": {
+        "clients": [
+          {
+            "id": "ad60c2b2-cc0c-492a-89aa-c92330a10cc9",
+            "email": "test_user@example.com"
+          },
+          {
+            "id": "c5a5e3f1-f09b-449e-b98a-ea4c75d7967b",
+            "email": "user1_aka_ms@example.com"
+          },
+          {
+            "id": "d8b2e347-19ab-48d8-9df2-50d4d29381e4",
+            "email": "user2_aka_ms@example.com"
+          },
+          {
+            "id": "2fa7d10e-a5e2-48cf-9a05-ea78a4819d9b",
+            "email": "user3_aka_ms@example.com"
+          },
+          {
+            "id": "9a8f6d71-bf02-4cbe-85b9-4a9f93ee72bf",
+            "email": "user4_whatsapp@example.com"
+          }
+        ]
+      },
+      "stream_settings": {
+        "security": "tls",
+        "tls_settings": {
+          "server_name": "aks.ms",
           "certificate_file": null,
           "key_file": null
         }
@@ -53,6 +161,10 @@
     }
   ],
   "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom"
+    },
     {
       "tag": "freedom",
       "protocol": "freedom",
@@ -72,6 +184,18 @@
   ],
   "routing": {
     "rules": [
+      {
+        "domain": [
+          "domain:google.com",
+          "domain:google.lk",
+          "domain:googleapis.com",
+          "domain:gstatic.com",
+          "domain:recaptcha.net",
+          "domain:cloudflare.com",
+          "domain:hcaptcha.com"
+        ],
+        "outbound_tag": "direct"
+      },
       {
         "domain": [
           "tiktok.com",

@@ -22,9 +22,10 @@ pub async fn sniff_sni(stream: &InboundTransportStream) -> Option<String> {
     match stream {
         InboundTransportStream::Plain(ref tcp) => {
             let mut buf = [0u8; 1024];
-            let n = match tcp.peek(&mut buf).await {
-                Ok(n) => n,
-                Err(_) => return None,
+            let peek_fut = tcp.peek(&mut buf);
+            let n = match tokio::time::timeout(std::time::Duration::from_millis(100), peek_fut).await {
+                Ok(Ok(n)) => n,
+                _ => return None,
             };
             parse_sni_from_bytes(&buf[..n])
         }

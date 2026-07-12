@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     runtime.block_on(async {
         let _ = rustls::crypto::ring::default_provider().install_default();
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::WARN)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 "stream_settings": {
                     "security": "tls",
                     "tls_settings": {
-                        "server_name": "www.tiktok.com",
+                        "server_name": "aks.ms",
                         "certificate_file": null,
                         "key_file": null
                     }
@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 "stream_settings": {
                     "security": "tls",
                     "tls_settings": {
-                        "server_name": "www.tiktok.com",
+                        "server_name": "aks.ms",
                         "certificate_file": null,
                         "key_file": null
                     }

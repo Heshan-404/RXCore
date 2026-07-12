@@ -7,13 +7,13 @@ app.style.width = "100%";
 app.style.height = "100%";
 document.body.appendChild(app);
 
+/* ── Sidebar (icon rail) ── */
 const sidebar = document.createElement("div");
 sidebar.className = "sidebar";
 app.appendChild(sidebar);
 
 const sidebarTitle = document.createElement("div");
 sidebarTitle.className = "sidebar-title";
-sidebarTitle.textContent = "Ruve VPN";
 sidebar.appendChild(sidebarTitle);
 
 const sidebarMenu = document.createElement("div");
@@ -21,9 +21,9 @@ sidebarMenu.className = "sidebar-menu";
 sidebar.appendChild(sidebarMenu);
 
 const menuItems = [
-  { id: "connection", label: "Connection" },
-  { id: "profiles", label: "Profiles" },
-  { id: "logs", label: "Logs" }
+  { id: "connection", icon: "\u2302" },
+  { id: "profiles",   icon: "\u2630" },
+  { id: "logs",       icon: "\u2261" }
 ];
 
 const menuItemElems = {};
@@ -37,7 +37,8 @@ const tabs = {};
 menuItems.forEach((item, index) => {
   const elem = document.createElement("div");
   elem.className = "menu-item" + (index === 0 ? " active" : "");
-  elem.textContent = item.label;
+  elem.textContent = item.icon;
+  elem.title = item.id.charAt(0).toUpperCase() + item.id.slice(1);
   elem.addEventListener("click", () => switchTab(item.id));
   sidebarMenu.appendChild(elem);
   menuItemElems[item.id] = elem;
@@ -65,87 +66,90 @@ let isConnecting = false;
 let latencyInterval = null;
 let logsInterval = null;
 
+/* ══════════════════════════════════════════
+   CONNECTION TAB
+   ══════════════════════════════════════════ */
 const connTab = tabs["connection"];
 
-const connTitle = document.createElement("h2");
-connTitle.textContent = "Connection";
-connTab.appendChild(connTitle);
+const connHeader = document.createElement("div");
+connHeader.className = "tab-header";
+connTab.appendChild(connHeader);
 
-const connCard = document.createElement("div");
-connCard.className = "card";
-connTab.appendChild(connCard);
+const connHeaderTitle = document.createElement("h2");
+connHeaderTitle.textContent = "Home";
+connHeader.appendChild(connHeaderTitle);
 
-const statusRow = document.createElement("div");
-statusRow.className = "row";
-connCard.appendChild(statusRow);
+const connHeaderActions = document.createElement("div");
+connHeaderActions.className = "header-actions";
+connHeader.appendChild(connHeaderActions);
 
-const statusText = document.createElement("span");
-statusText.style.fontWeight = "600";
-statusText.textContent = "Service Status";
-statusRow.appendChild(statusText);
+const connBody = document.createElement("div");
+connBody.className = "tab-body";
+connTab.appendChild(connBody);
 
-const statusBadge = document.createElement("span");
-statusBadge.className = "status-badge disconnected";
-statusBadge.textContent = "Disconnected";
-statusRow.appendChild(statusBadge);
+/* Status bar */
+const statusBar = document.createElement("div");
+statusBar.className = "status-bar";
+connBody.appendChild(statusBar);
 
-const configRow = document.createElement("div");
-configRow.className = "row";
-connCard.appendChild(configRow);
+const statusDot = document.createElement("div");
+statusDot.className = "status-dot disconnected";
+statusBar.appendChild(statusDot);
 
-const configText = document.createElement("span");
-configText.style.fontWeight = "600";
-configText.textContent = "Selected Profile";
-configRow.appendChild(configText);
+const statusText = document.createElement("div");
+statusText.className = "status-text";
+statusText.textContent = "Disconnected";
+statusBar.appendChild(statusText);
 
-const activeConfigLabel = document.createElement("span");
-activeConfigLabel.style.color = "#aaaaaa";
-activeConfigLabel.textContent = "None Selected";
-configRow.appendChild(activeConfigLabel);
-
-const latencyRow = document.createElement("div");
-latencyRow.className = "row";
-connCard.appendChild(latencyRow);
-
-const latencyText = document.createElement("span");
-latencyText.style.fontWeight = "600";
-latencyText.textContent = "Latency";
-latencyRow.appendChild(latencyText);
-
-const latencyVal = document.createElement("span");
-latencyVal.style.color = "#888888";
+const latencyVal = document.createElement("div");
+latencyVal.className = "status-latency";
 latencyVal.textContent = "Offline";
-latencyRow.appendChild(latencyVal);
+statusBar.appendChild(latencyVal);
 
-const controlRow = document.createElement("div");
-controlRow.className = "row";
-controlRow.style.marginTop = "10px";
-connCard.appendChild(controlRow);
+/* Profile cards container */
+const profileCardsContainer = document.createElement("div");
+profileCardsContainer.style.display = "flex";
+profileCardsContainer.style.flexDirection = "column";
+profileCardsContainer.style.gap = "10px";
+connBody.appendChild(profileCardsContainer);
 
-const toggleBtn = document.createElement("button");
-toggleBtn.className = "btn btn-primary";
-toggleBtn.style.width = "100%";
-toggleBtn.style.padding = "12px";
-toggleBtn.textContent = "Start VPN";
-controlRow.appendChild(toggleBtn);
+/* FAB */
+const fab = document.createElement("button");
+fab.className = "fab";
+fab.innerHTML = "\u25B6";
+fab.title = "Connect VPN";
+document.body.appendChild(fab);
 
+/* ══════════════════════════════════════════
+   PROFILES TAB
+   ══════════════════════════════════════════ */
 const profTab = tabs["profiles"];
 
-const profTitle = document.createElement("h2");
-profTitle.textContent = "Profiles";
-profTab.appendChild(profTitle);
+const profHeader = document.createElement("div");
+profHeader.className = "tab-header";
+profTab.appendChild(profHeader);
 
+const profHeaderTitle = document.createElement("h2");
+profHeaderTitle.textContent = "Profiles";
+profHeader.appendChild(profHeaderTitle);
+
+const profBody = document.createElement("div");
+profBody.className = "tab-body";
+profTab.appendChild(profBody);
+
+/* Import card */
 const importCard = document.createElement("div");
 importCard.className = "card";
-profTab.appendChild(importCard);
+profBody.appendChild(importCard);
 
 const importTitle = document.createElement("span");
 importTitle.style.fontWeight = "600";
+importTitle.style.color = "#333";
 importTitle.textContent = "Import Profile";
 importCard.appendChild(importTitle);
 
 const vlessInput = document.createElement("textarea");
-vlessInput.placeholder = "Paste VLESS share link here (e.g. vless:\x2f\x2fuuid@host:port...)";
+vlessInput.placeholder = "Paste VLESS share link here (e.g. vless:" + slash + slash + "uuid@host:port...)";
 importCard.appendChild(vlessInput);
 
 const importBtn = document.createElement("button");
@@ -153,12 +157,14 @@ importBtn.className = "btn btn-primary";
 importBtn.textContent = "Import from Link";
 importCard.appendChild(importBtn);
 
+/* Manual add card */
 const manualCard = document.createElement("div");
 manualCard.className = "card";
-profTab.appendChild(manualCard);
+profBody.appendChild(manualCard);
 
 const manualTitle = document.createElement("span");
 manualTitle.style.fontWeight = "600";
+manualTitle.style.color = "#333";
 manualTitle.textContent = "Add Profile Manually";
 manualCard.appendChild(manualTitle);
 
@@ -174,7 +180,7 @@ manualForm.appendChild(row1);
 
 const grpName = document.createElement("div");
 grpName.className = "form-group";
-grpName.innerHTML = "<label>Profile Name<label>";
+grpName.innerHTML = "<label>Profile Name</label>";
 const inputName = document.createElement("input");
 inputName.type = "text";
 inputName.placeholder = "My Server";
@@ -183,7 +189,7 @@ row1.appendChild(grpName);
 
 const grpHost = document.createElement("div");
 grpHost.className = "form-group";
-grpHost.innerHTML = "<label>Server Host / IP<label>";
+grpHost.innerHTML = "<label>Server Host / IP</label>";
 const inputHost = document.createElement("input");
 inputHost.type = "text";
 inputHost.placeholder = "1.2.3.4";
@@ -196,7 +202,7 @@ manualForm.appendChild(row2);
 
 const grpPort = document.createElement("div");
 grpPort.className = "form-group";
-grpPort.innerHTML = "<label>Port<label>";
+grpPort.innerHTML = "<label>Port</label>";
 const inputPort = document.createElement("input");
 inputPort.type = "number";
 inputPort.value = "443";
@@ -205,7 +211,7 @@ row2.appendChild(grpPort);
 
 const grpSni = document.createElement("div");
 grpSni.className = "form-group";
-grpSni.innerHTML = "<label>SNI<label>";
+grpSni.innerHTML = "<label>SNI</label>";
 const inputSni = document.createElement("input");
 inputSni.type = "text";
 inputSni.placeholder = "example.com";
@@ -214,36 +220,71 @@ row2.appendChild(grpSni);
 
 const grpUuid = document.createElement("div");
 grpUuid.className = "form-group";
-grpUuid.innerHTML = "<label>UUID<label>";
+grpUuid.innerHTML = "<label>UUID</label>";
 const inputUuid = document.createElement("input");
 inputUuid.type = "text";
 inputUuid.placeholder = "uuid";
 manualForm.appendChild(grpUuid);
 
+/* Allow Insecure toggle in manual form */
+const aiRow = document.createElement("div");
+aiRow.className = "toggle-row";
+manualForm.appendChild(aiRow);
+
+const aiLabel = document.createElement("span");
+aiLabel.className = "toggle-row-label";
+aiLabel.textContent = "Allow Insecure";
+aiRow.appendChild(aiLabel);
+
+const aiToggle = document.createElement("label");
+aiToggle.className = "toggle-switch";
+const aiCheck = document.createElement("input");
+aiCheck.type = "checkbox";
+aiCheck.checked = true;
+aiToggle.appendChild(aiCheck);
+const aiSlider = document.createElement("span");
+aiSlider.className = "toggle-slider";
+aiToggle.appendChild(aiSlider);
+aiRow.appendChild(aiToggle);
+
 const addManualBtn = document.createElement("button");
-addManualBtn.className = "btn";
+addManualBtn.className = "btn btn-primary";
 addManualBtn.textContent = "Add Profile";
 manualCard.appendChild(addManualBtn);
 
+/* Saved Profiles list */
 const listTitle = document.createElement("span");
 listTitle.style.fontWeight = "600";
 listTitle.style.marginTop = "10px";
+listTitle.style.color = "#333";
 listTitle.textContent = "Saved Profiles";
-profTab.appendChild(listTitle);
+profBody.appendChild(listTitle);
 
 const configListContainer = document.createElement("div");
 configListContainer.className = "config-list";
-profTab.appendChild(configListContainer);
+profBody.appendChild(configListContainer);
 
+/* ══════════════════════════════════════════
+   LOGS TAB
+   ══════════════════════════════════════════ */
 const logsTab = tabs["logs"];
 
-const logsTitle = document.createElement("h2");
-logsTitle.textContent = "Logs";
-logsTab.appendChild(logsTitle);
+const logsHeader = document.createElement("div");
+logsHeader.className = "tab-header";
+logsTab.appendChild(logsHeader);
+
+const logsHeaderTitle = document.createElement("h2");
+logsHeaderTitle.textContent = "Logs";
+logsHeader.appendChild(logsHeaderTitle);
+
+const logsBody = document.createElement("div");
+logsBody.className = "tab-body";
+logsTab.appendChild(logsBody);
 
 const logCard = document.createElement("div");
 logCard.className = "card";
-logsTab.appendChild(logCard);
+logCard.style.flex = "1";
+logsBody.appendChild(logCard);
 
 const logsViewer = document.createElement("div");
 logsViewer.className = "log-viewer";
@@ -254,22 +295,221 @@ clearLogsBtn.className = "btn";
 clearLogsBtn.textContent = "Clear Logs View";
 logCard.appendChild(clearLogsBtn);
 
+/* ══════════════════════════════════════════
+   EDIT CONFIG DIALOG
+   ══════════════════════════════════════════ */
+function openEditDialog(cfg) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+
+  const dialog = document.createElement("div");
+  dialog.className = "modal-dialog";
+  dialog.style.position = "relative";
+  overlay.appendChild(dialog);
+
+  /* Header */
+  const header = document.createElement("div");
+  header.className = "modal-header";
+  dialog.appendChild(header);
+
+  const headerLeft = document.createElement("div");
+  headerLeft.className = "modal-header-left";
+  header.appendChild(headerLeft);
+
+  const headerIcon = document.createElement("div");
+  headerIcon.className = "modal-header-icon";
+  headerIcon.textContent = "M";
+  headerLeft.appendChild(headerIcon);
+
+  const headerTitle = document.createElement("h3");
+  headerTitle.textContent = "Edit Config (VLess)";
+  headerLeft.appendChild(headerTitle);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "modal-close-btn";
+  closeBtn.innerHTML = "\u00D7";
+  closeBtn.addEventListener("click", () => overlay.remove());
+  header.appendChild(closeBtn);
+
+  /* Body */
+  const body = document.createElement("div");
+  body.className = "modal-body";
+  dialog.appendChild(body);
+
+  function addField(labelText, value, opts) {
+    const grp = document.createElement("div");
+    grp.className = "modal-form-group";
+    const lbl = document.createElement("label");
+    lbl.textContent = labelText;
+    grp.appendChild(lbl);
+    const inp = document.createElement("input");
+    inp.type = opts && opts.type ? opts.type : "text";
+    inp.value = value || "";
+    if (opts && opts.highlight) inp.className = "highlight";
+    if (opts && opts.placeholder) inp.placeholder = opts.placeholder;
+    grp.appendChild(inp);
+    return { grp: grp, inp: inp };
+  }
+
+  const fRemarks = addField("Remarks", cfg.name, { highlight: true });
+  body.appendChild(fRemarks.grp);
+
+  const addrRow = document.createElement("div");
+  addrRow.className = "modal-form-row";
+  body.appendChild(addrRow);
+
+  const fAddr = addField("Address", cfg.server, { highlight: true });
+  addrRow.appendChild(fAddr.grp);
+
+  const fPort = addField("Port", String(cfg.port), { type: "number", highlight: true });
+  fPort.grp.style.maxWidth = "100px";
+  addrRow.appendChild(fPort.grp);
+
+  const fUuid = addField("User ID", cfg.uuid, { highlight: true });
+  body.appendChild(fUuid.grp);
+
+  const fSni = addField("SNI", cfg.sni);
+  body.appendChild(fSni.grp);
+
+  /* Allow Insecure toggle */
+  const toggleRow = document.createElement("div");
+  toggleRow.className = "toggle-row";
+  body.appendChild(toggleRow);
+
+  const toggleLabel = document.createElement("span");
+  toggleLabel.className = "toggle-row-label";
+  toggleLabel.textContent = "Allow Insecure";
+  toggleRow.appendChild(toggleLabel);
+
+  const toggleSwitch = document.createElement("label");
+  toggleSwitch.className = "toggle-switch";
+  const toggleInput = document.createElement("input");
+  toggleInput.type = "checkbox";
+  toggleInput.checked = cfg.allow_insecure !== false;
+  toggleSwitch.appendChild(toggleInput);
+  const slider = document.createElement("span");
+  slider.className = "toggle-slider";
+  toggleSwitch.appendChild(slider);
+  toggleRow.appendChild(toggleSwitch);
+
+  /* Save FAB */
+  const saveFab = document.createElement("button");
+  saveFab.className = "modal-fab";
+  saveFab.innerHTML = "\u2713";
+  saveFab.title = "Save";
+  saveFab.addEventListener("click", async () => {
+    try {
+      await invoke("update_config", {
+        id: cfg.id,
+        name: fRemarks.inp.value.trim() || cfg.name,
+        server: fAddr.inp.value.trim() || cfg.server,
+        port: parseInt(fPort.inp.value) || cfg.port,
+        uuid: fUuid.inp.value.trim() || cfg.uuid,
+        sni: fSni.inp.value.trim() || cfg.sni,
+        allowInsecure: toggleInput.checked
+      });
+      overlay.remove();
+      await loadConfigs();
+    } catch (err) {
+      alert("Save failed: " + err);
+    }
+  });
+  dialog.appendChild(saveFab);
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  document.body.appendChild(overlay);
+}
+
+/* ══════════════════════════════════════════
+   DATA / RENDER
+   ══════════════════════════════════════════ */
 async function loadConfigs() {
   try {
     configs = await invoke("get_configs");
     activeConfigId = await invoke("get_active_config_id");
+    renderProfileCards();
     renderConfigs();
-    updateActiveConfigDisplay();
   } catch (err) {
     console.error(err);
   }
+}
+
+function renderProfileCards() {
+  profileCardsContainer.innerHTML = "";
+  if (configs.length === 0) {
+    const empty = document.createElement("div");
+    empty.style.color = "#999";
+    empty.style.fontSize = "13px";
+    empty.style.textAlign = "center";
+    empty.style.padding = "40px 20px";
+    empty.textContent = "No profiles yet. Go to Profiles tab to add one.";
+    profileCardsContainer.appendChild(empty);
+    return;
+  }
+
+  configs.forEach(c => {
+    const card = document.createElement("div");
+    card.className = "profile-card" + (c.id === activeConfigId ? " active" : "");
+    card.addEventListener("click", () => selectProfile(c.id));
+
+    const info = document.createElement("div");
+    info.className = "profile-card-info";
+    card.appendChild(info);
+
+    const name = document.createElement("div");
+    name.className = "profile-card-name";
+    name.textContent = c.name;
+    info.appendChild(name);
+
+    const serverLine = document.createElement("div");
+    serverLine.className = "profile-card-server";
+    serverLine.textContent = c.server + ":" + c.port;
+    info.appendChild(serverLine);
+
+    const proto = document.createElement("div");
+    proto.className = "profile-card-proto";
+    const tlsType = (c.allow_insecure === false) ? "TLS" : "RLTY";
+    proto.textContent = "(VLESS + TCP + " + tlsType + ")";
+    info.appendChild(proto);
+
+    const actions = document.createElement("div");
+    actions.className = "profile-card-actions";
+    card.appendChild(actions);
+
+    /* Edit button */
+    const editBtn = document.createElement("button");
+    editBtn.className = "profile-action-btn";
+    editBtn.innerHTML = "\u270E";
+    editBtn.title = "Edit";
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openEditDialog(c);
+    });
+    actions.appendChild(editBtn);
+
+    /* Delete button */
+    const delBtn = document.createElement("button");
+    delBtn.className = "profile-action-btn danger";
+    delBtn.innerHTML = "\u2716";
+    delBtn.title = "Delete";
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteProfile(c.id);
+    });
+    actions.appendChild(delBtn);
+
+    profileCardsContainer.appendChild(card);
+  });
 }
 
 function renderConfigs() {
   configListContainer.innerHTML = "";
   if (configs.length === 0) {
     const empty = document.createElement("div");
-    empty.style.color = "#888888";
+    empty.style.color = "#999";
     empty.style.fontSize = "13px";
     empty.style.textAlign = "center";
     empty.style.padding = "20px";
@@ -281,7 +521,7 @@ function renderConfigs() {
   configs.forEach(c => {
     const item = document.createElement("div");
     item.className = "config-item" + (c.id === activeConfigId ? " active" : "");
-    
+
     const info = document.createElement("div");
     info.className = "config-info";
     item.appendChild(info);
@@ -298,10 +538,10 @@ function renderConfigs() {
     details.className = "config-details";
     info.appendChild(details);
 
-    const name = document.createElement("span");
-    name.className = "config-name";
-    name.textContent = c.name;
-    details.appendChild(name);
+    const cname = document.createElement("span");
+    cname.className = "config-name";
+    cname.textContent = c.name;
+    details.appendChild(cname);
 
     const server = document.createElement("span");
     server.className = "config-server";
@@ -319,31 +559,17 @@ function renderConfigs() {
     });
     item.appendChild(delBtn);
 
-    item.addEventListener("click", () => {
-      selectProfile(c.id);
-    });
-
+    item.addEventListener("click", () => selectProfile(c.id));
     configListContainer.appendChild(item);
   });
-}
-
-function updateActiveConfigDisplay() {
-  const active = configs.find(c => c.id === activeConfigId);
-  if (active) {
-    activeConfigLabel.textContent = active.name + " (" + active.server + ":" + active.port + ")";
-    activeConfigLabel.style.color = "#60cdff";
-  } else {
-    activeConfigLabel.textContent = "None Selected";
-    activeConfigLabel.style.color = "#aaaaaa";
-  }
 }
 
 async function selectProfile(id) {
   try {
     await invoke("select_config", { id });
     activeConfigId = id;
+    renderProfileCards();
     renderConfigs();
-    updateActiveConfigDisplay();
   } catch (err) {
     alert(err);
   }
@@ -363,7 +589,7 @@ importBtn.addEventListener("click", async () => {
   if (!val) return;
   const prefix = "vless:" + slash + slash;
   if (!val.startsWith(prefix)) {
-    alert("Invalid config link format. Link must start with vless:\x2f\x2f");
+    alert("Invalid config link format. Link must start with vless:" + slash + slash);
     return;
   }
 
@@ -383,6 +609,7 @@ addManualBtn.addEventListener("click", async () => {
   const port = parseInt(inputPort.value.trim());
   const sni = inputSni.value.trim();
   const uuid = inputUuid.value.trim();
+  const allowInsecure = aiCheck.checked;
 
   if (!name || !server || isNaN(port) || !uuid) {
     alert("Please fill in all fields.");
@@ -395,7 +622,8 @@ addManualBtn.addEventListener("click", async () => {
       server,
       port,
       uuid,
-      sni: sni || server
+      sni: sni || server,
+      allowInsecure: allowInsecure
     });
 
     inputName.value = "";
@@ -403,6 +631,7 @@ addManualBtn.addEventListener("click", async () => {
     inputPort.value = "443";
     inputSni.value = "";
     inputUuid.value = "";
+    aiCheck.checked = true;
 
     await loadConfigs();
     switchTab("connection");
@@ -414,22 +643,22 @@ addManualBtn.addEventListener("click", async () => {
 async function checkLatency() {
   if (!isConnected) {
     latencyVal.textContent = "Offline";
-    latencyVal.style.color = "#888888";
+    latencyVal.className = "status-latency";
     return;
   }
   try {
     const ms = await invoke("get_latency");
     latencyVal.textContent = ms + " ms";
     if (ms < 150) {
-      latencyVal.style.color = "#4ade80";
+      latencyVal.className = "status-latency good";
     } else if (ms < 300) {
-      latencyVal.style.color = "#fbbf24";
+      latencyVal.className = "status-latency ok";
     } else {
-      latencyVal.style.color = "#ff6b6b";
+      latencyVal.className = "status-latency bad";
     }
   } catch (err) {
     latencyVal.textContent = "Timeout";
-    latencyVal.style.color = "#ff6b6b";
+    latencyVal.className = "status-latency bad";
   }
 }
 
@@ -453,7 +682,7 @@ clearLogsBtn.addEventListener("click", () => {
   logsViewer.innerHTML = "";
 });
 
-toggleBtn.addEventListener("click", async () => {
+fab.addEventListener("click", async () => {
   if (isConnecting) return;
 
   if (!isConnected) {
@@ -464,56 +693,56 @@ toggleBtn.addEventListener("click", async () => {
     }
 
     isConnecting = true;
-    statusBadge.className = "status-badge connecting";
-    statusBadge.textContent = "Connecting";
-    toggleBtn.textContent = "Connecting...";
-    toggleBtn.disabled = true;
+    statusDot.className = "status-dot connecting";
+    statusText.textContent = "Connecting...";
+    fab.className = "fab connecting";
+    fab.innerHTML = "\u23F3";
 
     try {
       await invoke("toggle_proxy", { connect: true });
       isConnected = true;
-      statusBadge.className = "status-badge connected";
-      statusBadge.textContent = "Connected";
-      toggleBtn.textContent = "Stop Connection";
-      toggleBtn.className = "btn btn-danger";
-      
+      statusDot.className = "status-dot connected";
+      statusText.textContent = "Connected";
+      fab.className = "fab connected";
+      fab.innerHTML = "\u25A0";
+      fab.title = "Disconnect VPN";
+
       checkLatency();
       latencyInterval = setInterval(checkLatency, 5000);
-      
+
       fetchLogs();
       logsInterval = setInterval(fetchLogs, 1500);
     } catch (err) {
-      statusBadge.className = "status-badge error";
-      statusBadge.textContent = "Failed";
-      toggleBtn.textContent = "Start VPN";
-      toggleBtn.className = "btn btn-primary";
+      statusDot.className = "status-dot error";
+      statusText.textContent = "Failed";
+      fab.className = "fab";
+      fab.innerHTML = "\u25B6";
+      fab.title = "Connect VPN";
       alert("Connection failed: " + err);
     } finally {
       isConnecting = false;
-      toggleBtn.disabled = false;
     }
   } else {
     isConnecting = true;
-    toggleBtn.disabled = true;
 
     try {
       await invoke("toggle_proxy", { connect: false });
       isConnected = false;
-      statusBadge.className = "status-badge disconnected";
-      statusBadge.textContent = "Disconnected";
-      toggleBtn.textContent = "Start VPN";
-      toggleBtn.className = "btn btn-primary";
-      
+      statusDot.className = "status-dot disconnected";
+      statusText.textContent = "Disconnected";
+      fab.className = "fab";
+      fab.innerHTML = "\u25B6";
+      fab.title = "Connect VPN";
+
       if (latencyInterval) clearInterval(latencyInterval);
       if (logsInterval) clearInterval(logsInterval);
-      
+
       latencyVal.textContent = "Offline";
-      latencyVal.style.color = "#888888";
+      latencyVal.className = "status-latency";
     } catch (err) {
       alert("Disconnection failed: " + err);
     } finally {
       isConnecting = false;
-      toggleBtn.disabled = false;
     }
   }
 });

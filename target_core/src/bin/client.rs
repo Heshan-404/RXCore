@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     runtime.block_on(async {
         let subscriber = FmtSubscriber::builder()
-            .with_max_level(Level::INFO)
+            .with_max_level(Level::WARN)
             .finish();
         tracing::subscriber::set_global_default(subscriber)?;
 
@@ -177,12 +177,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     })
 }
 
+#[allow(dead_code)]
 async fn establish_vless_outbound(
     dest_host: &str,
     port: u16,
 ) -> Result<tokio_rustls::client::TlsStream<TcpStream>, Box<dyn std::error::Error + Send + Sync>> {
     let vps_addr = "68.183.191.244:443";
-    let sni_host = "www.tiktok.com";
+    let sni_host = "aks.ms";
     let uuid_str = "ad60c2b2-cc0c-492a-89aa-c92330a10cc9";
 
     let tcp = TcpStream::connect(vps_addr).await?;

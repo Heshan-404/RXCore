@@ -101,7 +101,19 @@ pub async fn dial_tcp(
         if let Some(ref ip_str) = bind_ip {
             dial_tcp_with_bind(&resolve_addr, ip_str).await
         } else {
-            Ok(TcpStream::connect(&resolve_addr).await?)
+            let mut target_addrs: Vec<SocketAddr> = tokio::net::lookup_host(&resolve_addr).await?.collect();
+            target_addrs.sort_by_key(|addr| !addr.is_ipv6());
+            let mut last_err = None;
+            for addr in target_addrs {
+                match TcpStream::connect(addr).await {
+                    Ok(stream) => return Ok(stream),
+                    Err(e) => last_err = Some(e),
+                }
+            }
+            let err: Box<dyn std::error::Error + Send + Sync> = last_err.map(Into::into).unwrap_or_else(|| {
+                Box::new(std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, "No addresses resolved"))
+            });
+            Err(err)
         }
     }
 }
@@ -111,30 +123,47 @@ pub async fn dial_tcp_with_bind(
     bind_ip_str: &str,
 ) -> Result<TcpStream, Box<dyn std::error::Error + Send + Sync>> {
     use socket2::{Socket, Domain, Type, Protocol};
-    let target_addrs: Vec<SocketAddr> = tokio::net::lookup_host(target_addr).await?.collect();
-    let target = target_addrs.first().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, "Target address lookup failed"))?;
     let bind_ip: std::net::IpAddr = bind_ip_str.parse()?;
     let bind_addr = SocketAddr::new(bind_ip, 0);
-    let domain = if target.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
-    let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
-    socket.set_nonblocking(true)?;
-    socket.bind(&bind_addr.into())?;
-    match socket.connect(&target.clone().into()) {
-        Ok(_) => {}
-        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-        Err(e) => return Err(e.into()),
+    
+    let mut target_addrs: Vec<SocketAddr> = tokio::net::lookup_host(target_addr).await?.collect();
+    target_addrs.sort_by_key(|addr| !addr.is_ipv6());
+    
+    let mut last_err = None;
+    for target in target_addrs {
+        let domain = if target.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
+        let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+        socket.set_nonblocking(true)?;
+        if target.is_ipv6() == bind_ip.is_ipv6() {
+            if let Err(e) = socket.bind(&bind_addr.into()) {
+                last_err = Some(e.into());
+                continue;
+            }
+        }
+        match socket.connect(&target.into()) {
+            Ok(_) => {}
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => {
+                last_err = Some(e.into());
+                continue;
+            }
+        }
+        let _ = socket.set_nodelay(true);
+        let _ = socket.set_recv_buffer_size(131072);
+        let _ = socket.set_send_buffer_size(131072);
+        #[cfg(target_os = "linux")]
+        {
+            let _ = socket.set_value(libc::SOL_TCP, libc::TCP_CONGESTION, b"bbr\0");
+            let _ = socket.set_value(libc::SOL_TCP, libc::TCP_QUICKACK, &1i32.to_ne_bytes());
+        }
+        let std_tcp: std::net::TcpStream = socket.into();
+        let tcp = TcpStream::from_std(std_tcp)?;
+        return Ok(tcp);
     }
-    let _ = socket.set_nodelay(true);
-    let _ = socket.set_recv_buffer_size(131072);
-    let _ = socket.set_send_buffer_size(131072);
-    #[cfg(target_os = "linux")]
-    {
-        let _ = socket.set_value(libc::SOL_TCP, libc::TCP_CONGESTION, b"bbr\0");
-        let _ = socket.set_value(libc::SOL_TCP, libc::TCP_QUICKACK, &1i32.to_ne_bytes());
-    }
-    let std_tcp: std::net::TcpStream = socket.into();
-    let tcp = TcpStream::from_std(std_tcp)?;
-    Ok(tcp)
+    let err: Box<dyn std::error::Error + Send + Sync> = last_err.unwrap_or_else(|| {
+        Box::new(std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, "Binding or connection failed"))
+    });
+    Err(err)
 }
 
 pub struct Socks5UdpAssociate {

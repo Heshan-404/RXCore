@@ -37,7 +37,7 @@ if ! command -v warp-cli >${s}dev${s}null; then
     apt-get install -y --no-install-recommends cloudflare-warp
 fi
 
-warp-cli --accept-tos registration new 2>${s}dev${s}null
+warp-cli --accept-tos registration new 2>${s}dev${s}null || true
 warp-cli --accept-tos mode proxy
 warp-cli --accept-tos proxy port 40000
 warp-cli --accept-tos connect
@@ -55,6 +55,22 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target" | tee "${s}etc${s}systemd${s}system${s}warp_autoshield.service"
 
+echo "[Unit]
+Description=Target Core Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=${s}root
+ExecStart=${s}root${s}target_core
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target" | tee "${s}etc${s}systemd${s}system${s}target_core.service"
+
 systemctl daemon-reload
 systemctl enable warp_autoshield.service
+systemctl enable target_core.service
 systemctl restart warp_autoshield.service
+systemctl restart target_core.service

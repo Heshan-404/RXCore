@@ -11,6 +11,7 @@ tokio = { version = "1.36", features = ["full"] }
 rustls = { version = "0.23", features = ["ring"] }
 tokio-rustls = { version = "0.26", features = ["ring"] }
 rustls-pki-types = "1.0"
+rustls-native-certs = "0.7"
 uuid = { version = "1.7", features = ["v4", "serde"] }
 parking_lot = "0.12"
 tracing = "0.1"
@@ -26,3 +27,8 @@ winreg = "0.52"
 
 [build-dependencies]
 tauri-build = { version = "1.5" }
+
+[features]
+default = [ "custom-protocol" ]
+custom-protocol = [ "tauri/custom-protocol" ]
+

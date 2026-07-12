@@ -17,6 +17,7 @@ pub struct ProxyConfig {
     pub port: u16,
     pub uuid: String,
     pub sni: String,
+    pub allow_insecure: Option<bool>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -103,6 +104,7 @@ fn parse_vless_link(link: &str) -> Option<ProxyConfig> {
         port,
         uuid,
         sni,
+        allow_insecure: Some(false),
     })
 }
 
@@ -280,11 +282,28 @@ async fn establish_vless_outbound(
 
     let tcp = socket.connect(addr).await?;
 
-    let mut config = rustls::ClientConfig::builder()
-        .with_root_certificates(rustls::RootCertStore::empty())
-        .with_no_client_auth();
+    let allow_insecure = config.allow_insecure.unwrap_or(true);
+
+    let mut config = if allow_insecure {
+        let tls_cfg = rustls::ClientConfig::builder()
+            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_no_client_auth();
+        tls_cfg
+    } else {
+        let mut root_store = rustls::RootCertStore::empty();
+        if let Ok(certs) = rustls_native_certs::load_native_certs() {
+            for cert in certs {
+                let _ = root_store.add(cert);
+            }
+        }
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth()
+    };
     #[cfg(target_os = "windows")]
-    config.dangerous().set_certificate_verifier(Arc::new(DangerServerCertVerifier));
+    if allow_insecure {
+        config.dangerous().set_certificate_verifier(Arc::new(DangerServerCertVerifier));
+    }
     config.alpn_protocols = vec![b"h2".to_vec(), b"http\x2f1.1".to_vec()];
 
     let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
@@ -378,9 +397,11 @@ async fn toggle_proxy(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     if connect {
-        let mut handle_guard = state.proxy_handle.lock();
-        if handle_guard.is_some() {
-            return Ok("Already connected".to_string());
+        {
+            let handle_guard = state.proxy_handle.lock();
+            if handle_guard.is_some() {
+                return Ok("Already connected".to_string());
+            }
         }
 
         let active_config = {
@@ -409,20 +430,41 @@ async fn toggle_proxy(
             let adapter = wintun::Adapter::create(&wintun, "RuvePool", "RuveTun", None)
                 .map_err(|e| format!("Failed to create adapter: {}", e))?;
             
-            adapter.set_network_addresses_tuple(
-                std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 2)),
-                std::net::IpAddr::V4(std::net::Ipv4Addr::new(255, 255, 255, 0)),
-                Some(std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1))),
-            ).unwrap();
-            
-            let session = Arc::new(adapter.start_session(wintun::MAX_RING_CAPACITY).unwrap());
+            let mut set_addr_res = Err("Failed".to_string());
+            for _ in 0..15 {
+                if let Ok(_) = adapter.set_network_addresses_tuple(
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 2)),
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::new(255, 255, 255, 0)),
+                    Some(std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1))),
+                ) {
+                    set_addr_res = Ok(());
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            }
+            if set_addr_res.is_err() {
+                return Err("Failed to set TUN IP address after retries".to_string());
+            }
+
+            let mut start_sess_res = Err("Failed".to_string());
+            for _ in 0..5 {
+                if let Ok(s) = adapter.start_session(wintun::MAX_RING_CAPACITY) {
+                    start_sess_res = Ok(s);
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            }
+            let session = Arc::new(start_sess_res.map_err(|_| "Failed to start Wintun session".to_string())?);
             {
                 let mut session_guard = state.wintun_session.lock();
                 *session_guard = Some(Arc::clone(&session));
             }
 
             let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
-            *handle_guard = Some(tx);
+            {
+                let mut handle_guard = state.proxy_handle.lock();
+                *handle_guard = Some(tx);
+            }
 
             {
                 let mut l_guard = state.logs.lock();
@@ -785,6 +827,7 @@ async fn add_config(
     port: u16,
     uuid: String,
     sni: String,
+    allow_insecure: bool,
     state: State<'_, AppState>,
 ) -> Result<ProxyConfig, String> {
     let config = ProxyConfig {
@@ -794,6 +837,7 @@ async fn add_config(
         port,
         uuid,
         sni,
+        allow_insecure: Some(allow_insecure),
     };
     let mut configs = state.configs.lock();
     let mut active_id = state.active_config_id.lock();
@@ -803,6 +847,31 @@ async fn add_config(
     }
     save_configs_to_file(&configs, &active_id);
     Ok(config)
+}
+
+#[tauri::command]
+async fn update_config(
+    id: String,
+    name: String,
+    server: String,
+    port: u16,
+    uuid: String,
+    sni: String,
+    allow_insecure: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut configs = state.configs.lock();
+    let active_id = state.active_config_id.lock();
+    if let Some(config) = configs.iter_mut().find(|c| c.id == id) {
+        config.name = name;
+        config.server = server;
+        config.port = port;
+        config.uuid = uuid;
+        config.sni = sni;
+        config.allow_insecure = Some(allow_insecure);
+    }
+    save_configs_to_file(&configs, &active_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -925,6 +994,7 @@ fn main() {
             select_config,
             delete_config,
             add_config,
+            update_config,
             import_config_link
         ])
         .run(tauri::generate_context!())
