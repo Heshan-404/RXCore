@@ -1,19 +1,19 @@
-use std::net::SocketAddr;
-use std::sync::{Arc, OnceLock};
+use bytes::BufMut;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info, warn};
-use bytes::BufMut;
 
 use crate::config::InboundConfig;
 use crate::dispatcher::dispatch_connection;
-use crate::state::EngineState;
 use crate::inbound::InboundListener;
+use crate::state::EngineState;
 use async_trait::async_trait;
 
-use socket2::{Socket, Domain, Type, Protocol};
+use socket2::{Domain, Protocol, Socket, Type};
 
 pub struct Socks5Inbound {
     pub config: InboundConfig,
@@ -39,19 +39,24 @@ impl InboundListener for Socks5Inbound {
         loop {
             match listener.accept().await {
                 Ok((socket, client_addr)) => {
-                    let _ = socket.set_nodelay(true);
+                    if let Err(e) = socket.set_nodelay(true) {
+                        tracing::debug!(error = %e, "Failed to enable TCP_NODELAY");
+                    }
 
                     let engine = Arc::clone(&engine_state);
                     let inbound_tag = tag.clone();
 
                     tokio::spawn(async move {
-                        if let Err(e) = handle_socks5_connection(socket, client_addr, inbound_tag, engine).await {
+                        if let Err(e) =
+                            handle_socks5_connection(socket, client_addr, inbound_tag, engine).await
+                        {
                             warn!(error = %e, client = %client_addr, "SOCKS5 handshake failed");
                         }
                     });
                 }
                 Err(e) => {
                     error!(error = %e, "Failed to accept SOCKS5 connection");
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
             }
         }
@@ -166,7 +171,7 @@ fn spawn_association_cleanup_task() {
             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
             let now = current_secs();
             let mut to_remove = Vec::new();
-            
+
             {
                 let assoc_guard = get_assoc_map().lock();
                 for (&id, assoc) in assoc_guard.iter() {
@@ -176,7 +181,7 @@ fn spawn_association_cleanup_task() {
                     }
                 }
             }
-            
+
             if !to_remove.is_empty() {
                 let mut assoc_guard = get_assoc_map().lock();
                 let mut sessions_guard = get_client_sessions().lock();
@@ -204,24 +209,27 @@ fn get_or_create_association(
 
     let mut sessions_guard = get_client_sessions().lock();
     let mut assoc_guard = get_assoc_map().lock();
-    
+
     if let Some(&assoc_id) = sessions_guard.get(&client_addr) {
         if let Some(assoc) = assoc_guard.get(&assoc_id) {
             assoc.last_active.store(current_secs(), Ordering::Relaxed);
         }
         return assoc_id;
     }
-    
+
     let assoc_id = NEXT_ASSOC_ID.fetch_add(1, Ordering::Relaxed);
     sessions_guard.insert(client_addr, assoc_id);
-    
-    assoc_guard.insert(assoc_id, ClientAssociation {
-        client_addr,
-        socket,
-        last_active: Arc::new(std::sync::atomic::AtomicU64::new(current_secs())),
-        rx_counter,
-    });
-    
+
+    assoc_guard.insert(
+        assoc_id,
+        ClientAssociation {
+            client_addr,
+            socket,
+            last_active: Arc::new(std::sync::atomic::AtomicU64::new(current_secs())),
+            rx_counter,
+        },
+    );
+
     assoc_id
 }
 
@@ -233,15 +241,19 @@ pub struct UdpUpstreamPacket {
 
 static UDP_UPSTREAM_TX: OnceLock<tokio::sync::mpsc::Sender<UdpUpstreamPacket>> = OnceLock::new();
 
-fn get_udp_upstream_tx(engine_state: &Arc<EngineState>) -> tokio::sync::mpsc::Sender<UdpUpstreamPacket> {
-    UDP_UPSTREAM_TX.get_or_init(|| {
-        let (tx, rx) = tokio::sync::mpsc::channel(128);
-        let engine_clone = Arc::clone(engine_state);
-        tokio::spawn(async move {
-            run_global_vless_udp_tunnel(rx, engine_clone).await;
-        });
-        tx
-    }).clone()
+fn get_udp_upstream_tx(
+    engine_state: &Arc<EngineState>,
+) -> tokio::sync::mpsc::Sender<UdpUpstreamPacket> {
+    UDP_UPSTREAM_TX
+        .get_or_init(|| {
+            let (tx, rx) = tokio::sync::mpsc::channel(128);
+            let engine_clone = Arc::clone(engine_state);
+            tokio::spawn(async move {
+                run_global_vless_udp_tunnel(rx, engine_clone).await;
+            });
+            tx
+        })
+        .clone()
 }
 
 async fn establish_raw_vless_stream(
@@ -249,7 +261,10 @@ async fn establish_raw_vless_stream(
 ) -> Result<VlessTunnelStream, Box<dyn std::error::Error + Send + Sync>> {
     let vless_config = {
         let config_guard = engine_state.config.read();
-        let vless_outbound = config_guard.outbounds.iter().find(|o| o.protocol == "vless");
+        let vless_outbound = config_guard
+            .outbounds
+            .iter()
+            .find(|o| o.protocol == "vless");
         vless_outbound.and_then(|o| o.settings.as_ref().and_then(|s| s.vless.clone()))
     };
 
@@ -264,8 +279,9 @@ async fn establish_raw_vless_stream(
     let _ = server_tcp.set_nodelay(true);
 
     let server_stream = if let Some(ref tls_settings) = cfg.tls {
-        let connector = crate::transport::tls::tls_helper::create_client_config(&tls_settings.server_name)?;
-        let server_name = rustls::pki_types::ServerName::try_from(tls_settings.server_name.clone())?;
+        let connector =
+            crate::transport::tls::tls_helper::create_client_config(&tls_settings.server_name)?;
+        let server_name = rustls_pki_types::ServerName::try_from(tls_settings.server_name.clone())?;
         let tls_stream = connector.connect(server_name, server_tcp).await?;
         VlessTunnelStream::Tls(tls_stream)
     } else {
@@ -275,8 +291,14 @@ async fn establish_raw_vless_stream(
     Ok(server_stream)
 }
 
-fn bind_udp_socket_with_buffers(addr: SocketAddr) -> Result<tokio::net::UdpSocket, Box<dyn std::error::Error + Send + Sync>> {
-    let domain = if addr.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
+fn bind_udp_socket_with_buffers(
+    addr: SocketAddr,
+) -> Result<tokio::net::UdpSocket, Box<dyn std::error::Error + Send + Sync>> {
+    let domain = if addr.is_ipv4() {
+        Domain::IPV4
+    } else {
+        Domain::IPV6
+    };
     let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
     socket.set_recv_buffer_size(64 * 1024)?;
     socket.set_send_buffer_size(64 * 1024)?;
@@ -295,7 +317,10 @@ async fn connect_to_vless(
 
     let vless_config = {
         let config_guard = engine_state.config.read();
-        let vless_outbound = config_guard.outbounds.iter().find(|o| o.protocol == "vless");
+        let vless_outbound = config_guard
+            .outbounds
+            .iter()
+            .find(|o| o.protocol == "vless");
         vless_outbound.and_then(|o| o.settings.as_ref().and_then(|s| s.vless.clone()))
     };
 
@@ -373,7 +398,11 @@ async fn run_global_vless_udp_tunnel(
                     break;
                 }
                 let frame_len = total_len - 2;
-                if buf_reader.read_exact(&mut payload_buf[..frame_len]).await.is_err() {
+                if buf_reader
+                    .read_exact(&mut payload_buf[..frame_len])
+                    .await
+                    .is_err()
+                {
                     break;
                 }
 
@@ -413,13 +442,20 @@ async fn run_global_vless_udp_tunnel(
                     reply_buf[0] = 0x00;
                     reply_buf[1] = 0x00;
                     reply_buf[2] = 0x00;
-                    
+
                     let header_len = 3 + offset;
                     reply_buf[3..header_len].copy_from_slice(&payload_buf[..offset]);
                     reply_buf[header_len..header_len + payload.len()].copy_from_slice(payload);
 
-                    if assoc.socket.send_to(&reply_buf[..header_len + payload.len()], assoc.client_addr).await.is_ok() {
-                        assoc.rx_counter.fetch_add(payload.len() as u64, Ordering::Relaxed);
+                    if assoc
+                        .socket
+                        .send_to(&reply_buf[..header_len + payload.len()], assoc.client_addr)
+                        .await
+                        .is_ok()
+                    {
+                        assoc
+                            .rx_counter
+                            .fetch_add(payload.len() as u64, Ordering::Relaxed);
                         if let Some(stats) = engine_state.get_user_stats(&None) {
                             stats.rx.fetch_add(payload.len() as u64, Ordering::Relaxed);
                         }
@@ -433,43 +469,41 @@ async fn run_global_vless_udp_tunnel(
             while let Some(packet) = rx.recv().await {
                 send_buf.clear();
                 let target_port = packet.target.port();
-                
+
                 // Write placeholder for frame length prefix (2 bytes)
                 send_buf.put_u16(0);
-                
+
                 // Write association ID
                 send_buf.put_u16(packet.assoc_id);
-                
+
                 // Write address type and address
                 match &packet.target {
-                    UdpTarget::Ip(ip, _) => {
-                        match ip {
-                            std::net::IpAddr::V4(ipv4) => {
-                                send_buf.put_u8(1);
-                                send_buf.put_slice(&ipv4.octets());
-                            }
-                            std::net::IpAddr::V6(ipv6) => {
-                                send_buf.put_u8(4);
-                                send_buf.put_slice(&ipv6.octets());
-                            }
+                    UdpTarget::Ip(ip, _) => match ip {
+                        std::net::IpAddr::V4(ipv4) => {
+                            send_buf.put_u8(1);
+                            send_buf.put_slice(&ipv4.octets());
                         }
-                    }
+                        std::net::IpAddr::V6(ipv6) => {
+                            send_buf.put_u8(4);
+                            send_buf.put_slice(&ipv6.octets());
+                        }
+                    },
                     UdpTarget::Domain(domain, _) => {
                         send_buf.put_u8(3);
                         send_buf.put_u8(domain.len() as u8);
                         send_buf.put_slice(domain.as_bytes());
                     }
                 }
-                
+
                 // Write target port
                 send_buf.put_u16(target_port);
 
                 // Compute total frame length (header + payload), excluding the length prefix itself
                 let total_len = send_buf.len() - 2 + packet.payload.len();
-                
+
                 // Fill the length prefix at the beginning of the buffer
                 send_buf[0..2].copy_from_slice(&(total_len as u16).to_be_bytes());
-                
+
                 // Append payload
                 send_buf.put_slice(&packet.payload);
 
@@ -549,7 +583,9 @@ async fn handle_socks5_connection(
     }
 
     if cmd != 0x01 && cmd != 0x03 {
-        socket.write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+        socket
+            .write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+            .await?;
         return Err("Unsupported command".into());
     }
 
@@ -559,7 +595,10 @@ async fn handle_socks5_connection(
             let needed = dest_addr_start + 4;
             read_exact_to_buf(&mut socket, &mut buf, needed).await?;
             let octets: [u8; 4] = buf[dest_addr_start..needed].try_into()?;
-            (std::net::IpAddr::V4(std::net::Ipv4Addr::from(octets)).to_string(), needed)
+            (
+                std::net::IpAddr::V4(std::net::Ipv4Addr::from(octets)).to_string(),
+                needed,
+            )
         }
         0x03 => {
             let needed = dest_addr_start + 1;
@@ -574,10 +613,15 @@ async fn handle_socks5_connection(
             let needed = dest_addr_start + 16;
             read_exact_to_buf(&mut socket, &mut buf, needed).await?;
             let octets: [u8; 16] = buf[dest_addr_start..needed].try_into()?;
-            (std::net::IpAddr::V6(std::net::Ipv6Addr::from(octets)).to_string(), needed)
+            (
+                std::net::IpAddr::V6(std::net::Ipv6Addr::from(octets)).to_string(),
+                needed,
+            )
         }
         _ => {
-            socket.write_all(&[0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+            socket
+                .write_all(&[0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await?;
             return Err("Unsupported address type".into());
         }
     };
@@ -587,11 +631,26 @@ async fn handle_socks5_connection(
     let dest_port = u16::from_be_bytes([buf[dest_port_offset], buf[dest_port_offset + 1]]);
 
     if cmd == 0x01 {
-        socket.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+        socket
+            .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+            .await?;
         let dummy_uuid = [0u8; 16];
-        dispatch_connection(crate::inbound::InboundTransportStream::Plain(socket), client_addr, dest_addr, dest_port, inbound_tag, dummy_uuid, 1, engine_state).await?;
+        dispatch_connection(
+            crate::inbound::InboundTransportStream::Plain(socket),
+            client_addr,
+            dest_addr,
+            dest_port,
+            inbound_tag,
+            dummy_uuid,
+            1,
+            engine_state,
+        )
+        .await?;
     } else {
-        let client_udp_socket = bind_udp_socket_with_buffers(SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0))?;
+        let client_udp_socket = bind_udp_socket_with_buffers(SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+            0,
+        ))?;
         let local_addr = socket.local_addr()?;
         let bound_port = client_udp_socket.local_addr()?.port();
         let mut reply = vec![0x05, 0x00, 0x00];
@@ -610,7 +669,10 @@ async fn handle_socks5_connection(
 
         let outbound_tag = {
             let config_guard = engine_state.config.read();
-            let vless_outbound = config_guard.outbounds.iter().find(|o| o.protocol == "vless");
+            let vless_outbound = config_guard
+                .outbounds
+                .iter()
+                .find(|o| o.protocol == "vless");
             vless_outbound.map(|o| o.tag.clone())
         };
 
@@ -628,12 +690,14 @@ async fn handle_socks5_connection(
             rx: Arc::clone(&rx_counter),
             tx: Arc::clone(&tx_counter),
             start_time: std::time::Instant::now(),
+            user_uuid: None,
+            shutdown_tx: None,
         };
         engine_state.register_connection(conn_info);
 
         let socket_arc = Arc::new(client_udp_socket);
         let socket_rx = Arc::clone(&socket_arc);
-        
+
         let mut recv_buf = [0u8; 65535];
         let mut tcp_buf = [0u8; 1024];
 
@@ -733,7 +797,7 @@ async fn handle_socks5_connection(
                 }
             }
         }
-        
+
         engine_state.deregister_connection(&conn_id);
     }
     Ok(())

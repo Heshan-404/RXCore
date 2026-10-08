@@ -1,11 +1,10 @@
+use bytes::{Buf, Bytes};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use tokio::net::TcpStream;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use bytes::{Bytes, Buf};
-
 
 pub enum OutboundTransportStream {
     Plain(TcpStream),
@@ -37,14 +36,20 @@ impl tokio::io::AsyncWrite for OutboundTransportStream {
         }
     }
 
-    fn poll_flush(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         match self.get_mut() {
             Self::Plain(ref mut s) => std::pin::Pin::new(s).poll_flush(cx),
             Self::Tls(ref mut s) => std::pin::Pin::new(s).poll_flush(cx),
         }
     }
 
-    fn poll_shutdown(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         match self.get_mut() {
             Self::Plain(ref mut s) => std::pin::Pin::new(s).poll_shutdown(cx),
             Self::Tls(ref mut s) => std::pin::Pin::new(s).poll_shutdown(cx),
@@ -272,22 +277,32 @@ impl tokio::io::AsyncWrite for MuxVirtualStream {
                     is_udp: self.is_udp,
                 };
                 if self.tx_frames.send_item(frame).is_err() {
-                    return std::task::Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "Connection closed")));
+                    return std::task::Poll::Ready(Err(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionAborted,
+                        "Connection closed",
+                    )));
                 }
                 std::task::Poll::Ready(Ok(buf.len()))
             }
-            std::task::Poll::Ready(Err(_)) => {
-                std::task::Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "Connection closed")))
-            }
+            std::task::Poll::Ready(Err(_)) => std::task::Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "Connection closed",
+            ))),
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
     }
 
-    fn poll_flush(self: std::pin::Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         std::task::Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(self: std::pin::Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         if let Some(tx) = self.tx_frames.get_ref() {
             let _ = tx.try_send(MuxFrame {
                 stream_id: self.stream_id,
@@ -395,7 +410,8 @@ impl MuxPool {
         } else {
             80
         };
-        let tcp = crate::transport::dial_tcp(host, port, &self.bind_address, &self.outbound_proxy).await?;
+        let tcp = crate::transport::dial_tcp(host, port, &self.bind_address, &self.outbound_proxy)
+            .await?;
         let _ = tcp.set_nodelay(true);
         #[cfg(windows)]
         {
@@ -427,7 +443,7 @@ impl MuxPool {
         let stream = if self.use_tls {
             let sni_str = self.sni.as_deref().unwrap_or("localhost");
             let connector = crate::transport::tls::tls_helper::create_client_config(sni_str)?;
-            let server_name = rustls::pki_types::ServerName::try_from(sni_str.to_string())?;
+            let server_name = rustls_pki_types::ServerName::try_from(sni_str.to_string())?;
             let tls_stream = connector.connect(server_name, tcp).await?;
             OutboundTransportStream::Tls(tls_stream)
         } else {
@@ -482,9 +498,7 @@ impl MuxPool {
         loop {
             let action = {
                 let mut conns = self.connections.lock();
-                conns.retain(|c| {
-                    !c.writer_handle.is_finished() && !c.reader_handle.is_finished()
-                });
+                conns.retain(|c| !c.writer_handle.is_finished() && !c.reader_handle.is_finished());
 
                 let mut selected_conn = None;
                 for conn in conns.iter() {
@@ -540,7 +554,12 @@ impl MuxPool {
                         payload: Bytes::from(target_str),
                         is_udp,
                     };
-                    tx_frames.get_ref().unwrap().clone().send(open_frame).await?;
+                    tx_frames
+                        .get_ref()
+                        .unwrap()
+                        .clone()
+                        .send(open_frame)
+                        .await?;
 
                     return Ok(MuxVirtualStream {
                         stream_id,
@@ -575,23 +594,27 @@ mod tests {
         let (tx_low, rx_low) = mpsc::channel(1024);
 
         for i in 0..35 {
-            let _ = tx_high.send(MuxFrame {
-                stream_id: i,
-                cmd: 0,
-                payload: bytes::Bytes::new(),
-                is_udp: true,
-            }).await;
+            let _ = tx_high
+                .send(MuxFrame {
+                    stream_id: i,
+                    cmd: 0,
+                    payload: bytes::Bytes::new(),
+                    is_udp: true,
+                })
+                .await;
         }
 
-        let _ = tx_low.send(MuxFrame {
-            stream_id: 999,
-            cmd: 0,
-            payload: bytes::Bytes::new(),
-            is_udp: false,
-        }).await;
+        let _ = tx_low
+            .send(MuxFrame {
+                stream_id: 999,
+                cmd: 0,
+                payload: bytes::Bytes::new(),
+                is_udp: false,
+            })
+            .await;
 
         let writer = tokio::io::sink();
-        
+
         let handle = tokio::spawn(async move {
             let _ = run_connection_writer(writer, rx_high, rx_low).await;
         });
@@ -602,4 +625,3 @@ mod tests {
         let _ = handle.await;
     }
 }
-

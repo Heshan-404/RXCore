@@ -1,8 +1,8 @@
+use crate::inbound::InboundTransportStream;
+use crate::state::EngineState;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tracing::warn;
-use crate::inbound::InboundTransportStream;
-use crate::state::EngineState;
 
 async fn read_exact_to_buf<R: tokio::io::AsyncReadExt + Unpin>(
     stream: &mut R,

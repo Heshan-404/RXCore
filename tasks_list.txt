@@ -1,0 +1,1433 @@
+Implement secure administrator authentication and dashboard-managed selective WARP domain routing in this Rust VPN core.
+
+Environment:
+
+- Rust
+- Axum administration dashboard
+- Tokio current-thread runtime
+- 1 vCPU
+- 2 GB RAM
+- VLESS Reality
+- Hysteria/UDP
+- WARP selective routing
+- Cached pre-serialized dashboard responses
+- Existing subscription pages that generate Smart, Browsing WARP, and Low Latency profiles
+
+Primary requirements:
+
+1. The main dashboard at `/` must require an administrator password.
+2. Subscription pages must not require the administrator password.
+3. Subscription pages remain protected by secure subscription tokens.
+4. On the first interactive server run, securely request and confirm the administrator password.
+5. On later runs, display a login page when the dashboard is opened.
+6. Add an authenticated dashboard button to change the administrator password.
+7. Add WARP domain management to the main dashboard.
+8. Global WARP domain rules should apply to all accounts using Smart Selective mode.
+9. Browsing WARP mode should use WARP by default and support global Direct Exceptions.
+10. Authentication and routing management must not increase established VPN ping, jitter, or forwarding CPU usage.
+
+Do not add authentication checks, route-table lookups, password operations, JSON serialization, filesystem operations, or dashboard state access inside packet-forwarding loops.
+
+==================================================
+1. FIRST-RUN ADMIN INITIALIZATION
+==================================================
+
+Do not request a password during `cargo build`.
+
+Builds must always remain non-interactive.
+
+Request the password only when the server binary runs and no administrator credential exists.
+
+Store administrator credentials separately from `config.json`.
+
+Suggested path:
+
+data/admin_credentials.json
+
+The credential file must contain only:
+
+- Argon2id password hash in PHC format
+- session signing secret
+- session epoch
+- created timestamp
+- updated timestamp
+- password algorithm version
+
+Example structure:
+
+struct AdminCredentials {
+    password_hash: String,
+    session_secret: String,
+    session_epoch: u64,
+    created_at: i64,
+    updated_at: i64,
+    version: u32,
+}
+
+Never store:
+
+- plaintext administrator password
+- reversible encrypted password
+- password inside config.json
+- password inside logs
+- password inside environment diagnostics
+- password inside dashboard JSON
+- password inside browser localStorage
+
+==================================================
+2. INTERACTIVE FIRST RUN
+==================================================
+
+When the credential file does not exist and stdin is an interactive terminal:
+
+Display:
+
+Ruve VPN Administrator Setup
+Create a password for the administration dashboard.
+
+Prompt:
+
+Administrator password:
+Confirm administrator password:
+
+Hide terminal input while typing.
+
+Validation:
+
+- minimum 12 characters
+- maximum 128 characters
+- reject empty or whitespace-only values
+- reject mismatched confirmation
+- allow password managers and passphrases
+- do not require arbitrary character-class rules
+
+After successful entry:
+
+1. Generate a cryptographically secure random salt.
+2. Hash using Argon2id.
+3. Generate a separate random 32-byte session-signing secret.
+4. Write the credential file using:
+   - temporary file
+   - fsync
+   - atomic rename
+5. Set Linux permissions to `0600`.
+6. Never print the password or complete credential file.
+7. Continue normal server startup.
+
+Use a suitable password-input crate that disables terminal echo, such as `rpassword`, or an equivalent secure implementation.
+
+==================================================
+3. NON-INTERACTIVE FIRST RUN
+==================================================
+
+A systemd service normally has no interactive terminal.
+
+When credentials are missing and stdin is not interactive:
+
+- do not start the administration dashboard without authentication
+- do not create a default password
+- do not generate and print a permanent password
+- do not temporarily expose an unauthenticated setup page
+- fail closed with a clear error
+
+Display:
+
+Administrator credentials are not initialized.
+
+Run:
+
+target_core admin init
+
+or:
+
+target_core admin set-password
+
+Add CLI commands:
+
+target_core admin init
+target_core admin set-password
+target_core admin reset-password
+
+Behavior:
+
+admin init:
+- allowed only when no credential file exists
+- prompts securely for a new password
+
+admin set-password:
+- requires the current administrator password when credentials exist
+- prompts securely for a replacement password
+
+admin reset-password:
+- intended for a server administrator with filesystem/root access
+- must require an explicit confirmation flag
+- must not expose the old password
+- rotates the password hash
+- rotates the session signing secret
+- increments the session epoch
+- invalidates every active dashboard session
+
+Support secure automated initialization using a password file:
+
+target_core admin init --password-file /secure/path/admin-password
+
+Requirements:
+
+- file must not be world-readable
+- read once
+- do not log file contents
+- do not accept plaintext passwords directly as command-line arguments
+- command-line arguments may be visible to other processes
+
+==================================================
+4. PASSWORD HASHING
+==================================================
+
+Use Argon2id.
+
+Recommended initial parameters for this 1-vCPU, 2-GB VPS:
+
+- memory: 32 MiB
+- iterations: 2
+- parallelism: 1
+
+Make parameters versioned and configurable within safe bounds.
+
+Do not perform Argon2 work on the Tokio current-thread reactor.
+
+Use:
+
+- a dedicated administrator-auth semaphore with capacity 1
+- `tokio::task::spawn_blocking`
+- no state lock held while awaiting verification
+
+Example control:
+
+admin_auth_cpu: Semaphore::new(1)
+
+Argon2 operations occur only during:
+
+- login
+- password change
+- CLI initialization/reset
+
+Do not verify the password on every dashboard request.
+
+Benchmark the selected parameters on the VPS.
+
+Target:
+
+- strong password hashing
+- reasonable login time
+- no extended one-core CPU spike
+
+Do not silently downgrade to plaintext, SHA-256-only, MD5, or unsalted hashes.
+
+==================================================
+5. ADMIN LOGIN PAGE
+==================================================
+
+The root route `/` should behave as follows:
+
+Authenticated administrator:
+- serve the main dashboard
+
+Unauthenticated request:
+- serve the administrator login page
+
+Login page content:
+
+Ruve VPN Administration
+
+Password field
+Sign In button
+Optional password visibility button
+Generic error message area
+
+Do not reveal whether:
+
+- the password hash exists
+- a specific part of the password was wrong
+- a username exists
+
+Use a generic error:
+
+Invalid password or login temporarily unavailable.
+
+The requested behavior is password-only authentication, so use a fixed internal administrator identity.
+
+Do not require a username field in the first version.
+
+==================================================
+6. ADMIN AUTHENTICATION ENDPOINTS
+==================================================
+
+Add:
+
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/auth/session
+POST /api/auth/change-password
+
+POST /api/auth/login
+
+Request:
+
+{
+  "password": "..."
+}
+
+On success:
+
+- issue a secure authenticated session cookie
+- return a minimal success response
+- do not return the session secret in JSON
+
+On failure:
+
+- return a generic 401 or 429 response
+- do not log the submitted password
+- do not reveal hash timing information beyond normal secure verification
+
+POST /api/auth/logout
+
+- clear the session cookie
+- require CSRF protection
+- return success even when the session is already invalid
+
+GET /api/auth/session
+
+Return only:
+
+{
+  "authenticated": true,
+  "expires_at": 1234567890
+}
+
+Do not include credential hashes or session secrets.
+
+POST /api/auth/change-password
+
+Request:
+
+{
+  "current_password": "...",
+  "new_password": "...",
+  "confirm_password": "..."
+}
+
+Requirements:
+
+1. Require a valid administrator session.
+2. Require CSRF protection.
+3. Verify the current password using Argon2id.
+4. Validate the new password.
+5. Ensure confirmation matches.
+6. Generate a new salt.
+7. Generate the new Argon2id hash.
+8. Increment `session_epoch`.
+9. Optionally rotate the session-signing secret.
+10. Atomically persist the credential file.
+11. Invalidate all previous sessions.
+12. Issue a new session for the current administrator or require immediate re-login.
+13. Never log either password.
+
+Preferred behavior:
+
+- invalidate every previous session
+- issue one fresh session to the administrator who changed the password
+- log out other browsers/devices
+
+==================================================
+7. SESSION DESIGN
+==================================================
+
+Use a lightweight signed session cookie.
+
+Do not store a large server-side session HashMap for ordinary use.
+
+Suggested session claims:
+
+struct AdminSessionClaims {
+    issued_at: i64,
+    expires_at: i64,
+    session_epoch: u64,
+    csrf_token: [u8; 32],
+}
+
+Encode the claims and authenticate them using:
+
+HMAC-SHA256
+
+Use the random session secret stored in the administrator credential file.
+
+Cookie requirements:
+
+- HttpOnly
+- SameSite=Strict
+- Path=/
+- short clear name, such as `ruve_admin_session`
+- maximum age approximately 12 hours
+- Secure when using HTTPS
+
+When the management interface is accessed through plain HTTP:
+
+- allow a non-Secure cookie only when the API is bound to loopback
+- warn and refuse public non-TLS administration
+- never serve password authentication publicly over plaintext HTTP
+
+Validate on every protected HTTP request:
+
+- HMAC
+- expiry
+- session epoch
+- cookie format
+
+This should require only:
+
+- cookie parsing
+- HMAC verification
+- atomic credential/session-epoch read
+
+Do not run Argon2id on every request.
+
+==================================================
+8. CSRF PROTECTION
+==================================================
+
+All state-changing administrator requests must require CSRF validation.
+
+Protected methods:
+
+- POST
+- PUT
+- PATCH
+- DELETE
+
+Use a double-submit or signed-session-bound CSRF token.
+
+One acceptable design:
+
+- CSRF value exists inside the signed session claims
+- same value is provided to the browser through a separate readable CSRF cookie
+- JavaScript sends it as `X-CSRF-Token`
+- middleware verifies that the header value matches the signed claim
+
+Require CSRF protection for:
+
+- password changes
+- logout
+- user creation/deletion
+- Reality profile creation/deletion
+- WARP domain changes
+- routing changes
+- WARP restart/recheck
+- quota changes
+- configuration changes
+
+Do not require CSRF for read-only GET requests.
+
+==================================================
+9. LOGIN RATE LIMITING
+==================================================
+
+Add bounded login protection.
+
+Suggested initial limits:
+
+Per source IP:
+- 5 failed attempts per 5 minutes
+
+Global:
+- 20 failed attempts per 5 minutes
+
+After repeated failures:
+
+- apply exponential delay
+- return 429
+- do not queue Argon2 jobs indefinitely
+
+Use bounded state with expiry.
+
+Do not store an unbounded IP map.
+
+Normalize:
+
+- IPv4
+- IPv4-mapped IPv6
+- IPv6
+
+When the panel is behind a reverse proxy:
+
+- trust forwarded client IP headers only from explicitly configured trusted proxies
+- otherwise use the actual TCP peer address
+
+Successful login should clear or reduce the failure counter for that source.
+
+Use rate-limited warning logs without password data.
+
+==================================================
+10. ADMIN AUTHORIZATION MIDDLEWARE
+==================================================
+
+Create one administrator authentication middleware.
+
+Protect:
+
+- `/`
+- dashboard static HTML when it contains administrative functionality
+- `/connections-monitor`
+- every `/api/admin/*` endpoint
+- existing user-management APIs
+- Reality profile-management APIs
+- routing-management APIs
+- WARP control APIs
+- configuration APIs
+- private metrics APIs
+
+Preferred API namespace:
+
+/api/admin/dashboard
+/api/admin/users
+/api/admin/connections
+/api/admin/reality
+/api/admin/routing
+/api/admin/warp
+/api/admin/security
+
+Keep authentication routes under:
+
+/api/auth/*
+
+Do not accidentally protect public subscription endpoints with administrator middleware.
+
+Do not rely only on hiding buttons in JavaScript.
+
+Every protected server endpoint must enforce authorization.
+
+==================================================
+11. PUBLIC SUBSCRIPTION PAGES
+==================================================
+
+Subscription pages must not require the administrator password.
+
+Keep them separate:
+
+/subscription/:token
+/subscription/:token/vless
+/subscription/:token/sing-box
+/subscription/:token/all
+
+Subscription security must use an unguessable token.
+
+Requirements:
+
+- at least 32 random bytes
+- URL-safe encoding
+- generated by the backend
+- revocable
+- regeneratable
+- rate-limited
+- not based only on email address
+- not based on predictable user UUID alone
+
+Prefer storing only a cryptographic hash of the subscription token.
+
+Show the raw token only:
+
+- when initially generated
+- in an authenticated administrator action
+- or through a deliberate regeneration action
+
+Invalid subscription token:
+
+- return 404 or generic unauthorized response
+- do not reveal whether the email/account exists
+
+Subscription pages may display:
+
+- account status
+- remaining quota
+- expiry
+- Smart profile
+- Browsing WARP profile
+- Low Latency Direct profile
+- QR code
+- VLESS link
+- sing-box configuration
+- cached WARP health status
+- Smart compatibility-domain-set names
+
+Subscription pages must not expose:
+
+- administrator dashboard
+- user-management APIs
+- Reality private key
+- other accounts
+- complete server configuration
+- routing edit controls
+- password controls
+- internal monitoring data
+
+Add:
+
+X-Robots-Tag: noindex, nofollow
+
+Rate-limit subscription requests and QR generation.
+
+==================================================
+12. MANAGEMENT LISTEN SECURITY
+==================================================
+
+Recommended production binding:
+
+127.0.0.1:9091
+
+Access through:
+
+- SSH port forwarding
+- authenticated HTTPS reverse proxy
+- administrator IP firewall rule
+
+Do not expose the administrator login page over public plaintext HTTP.
+
+When binding administration to a non-loopback address:
+
+- require HTTPS termination
+- require a configured trusted proxy when applicable
+- reject startup or emit a strong fatal configuration error when insecure public HTTP is attempted
+
+Subscription pages may be served through a separate public listener or reverse-proxy route.
+
+Do not make the public subscription listener expose `/api/admin/*`.
+
+==================================================
+13. MAIN DASHBOARD SECURITY SECTION
+==================================================
+
+Add an administrator menu in the dashboard header.
+
+Example:
+
+Administrator
+- Security
+- Change Password
+- Sign Out
+
+Create a Security modal or page.
+
+Fields:
+
+Current Password
+New Password
+Confirm New Password
+
+Buttons:
+
+Update Password
+Cancel
+
+Show password requirements before submission.
+
+After successful update:
+
+Password updated successfully.
+Other administrator sessions have been signed out.
+
+Do not prefill password fields.
+
+Do not store passwords in browser storage.
+
+Use `autocomplete` attributes appropriately:
+
+Current password:
+autocomplete="current-password"
+
+New password:
+autocomplete="new-password"
+
+==================================================
+14. WARP DOMAIN MANAGEMENT ON MAIN DASHBOARD
+==================================================
+
+Add a main dashboard section:
+
+Routing & WARP Domains
+
+Use two tabs:
+
+1. Smart Mode — WARP Domains
+2. Browsing WARP — Direct Exceptions
+
+==================================================
+15. SMART MODE GLOBAL WARP DOMAINS
+==================================================
+
+Smart Selective behavior:
+
+- direct by default
+- enabled global WARP domains use WARP
+- infrastructure and local/private traffic always use direct
+
+The Smart WARP list applies globally to:
+
+- all accounts
+- all devices
+- all users connected through Smart Selective profiles
+
+Do not implement per-account domain rules in the first version.
+
+Design the data model so scope can be extended later, but support only:
+
+scope = Global
+
+in the initial UI and API.
+
+Display clearly:
+
+Scope: All Smart-mode accounts
+
+Add reusable domain sets:
+
+struct WarpDomainSet {
+    id: Uuid,
+    name: String,
+    description: String,
+    exact_domains: Vec<String>,
+    domain_suffixes: Vec<String>,
+    enabled: bool,
+    priority: i32,
+    scope: DomainRuleScope,
+    created_at: i64,
+    updated_at: i64,
+}
+
+enum DomainRuleScope {
+    Global,
+}
+
+Dashboard table columns:
+
+Name
+Route
+Scope
+Exact Domains
+Suffix Domains
+Priority
+Enabled
+Actions
+
+Actions:
+
+- Add Domain Set
+- Edit
+- Enable
+- Disable
+- Delete
+- Test Route
+- Add Exact Domain
+- Add Domain Suffix
+
+==================================================
+16. BROWSING WARP DIRECT EXCEPTIONS
+==================================================
+
+Browsing WARP behavior:
+
+- WARP by default
+- infrastructure traffic direct
+- private/local traffic direct
+- administrator Direct Exception domains direct
+
+Create a similar model:
+
+struct DirectExceptionSet {
+    id: Uuid,
+    name: String,
+    description: String,
+    exact_domains: Vec<String>,
+    domain_suffixes: Vec<String>,
+    enabled: bool,
+    priority: i32,
+    scope: DomainRuleScope,
+    created_at: i64,
+    updated_at: i64,
+}
+
+Use for:
+
+- gaming services
+- VoIP
+- meeting platforms
+- real-time communications
+- websites that perform better directly
+
+Display:
+
+Scope: All Browsing-WARP accounts
+
+Low Latency Direct mode does not need a WARP domain list because it always uses direct routing.
+
+==================================================
+17. DOMAIN ENTRY VALIDATION
+==================================================
+
+Support:
+
+Exact domain:
+
+login.example.com
+
+Matches only:
+
+login.example.com
+
+Domain suffix:
+
+example.com
+
+Matches:
+
+example.com
+www.example.com
+cdn.example.com
+
+Must not match:
+
+notexample.com
+anotherexample.com
+
+Normalize:
+
+- lowercase
+- remove trailing dot
+- trim whitespace
+- convert internationalized domains consistently
+- reject invalid hostnames
+- reject URL paths
+- reject schemes such as `https://`
+- reject ports
+- reject query strings
+
+Do not use regex matching in the connection path.
+
+Show a preview before saving:
+
+This suffix will match:
+example.com
+*.example.com
+
+Warn when a suffix is unusually broad.
+
+Reject or require an explicit advanced confirmation for dangerously broad entries such as:
+
+com
+net
+org
+co.uk
+
+Reject duplicates inside the same effective route scope.
+
+==================================================
+18. INITIAL DOMAIN PRESETS
+==================================================
+
+Seed editable presets rather than permanently hard-coding routing in Rust.
+
+Suggested first-run presets:
+
+Online Fix Compatibility
+
+Enabled:
+true
+
+Exact domains:
+online-fix.me
+
+Suffix domains:
+online-fix.me
+
+Google Search Compatibility
+
+Enabled:
+false by default
+
+Exact domains:
+www.google.com
+google.com
+
+Google Account Compatibility
+
+Enabled:
+false by default
+
+Exact domains:
+accounts.google.com
+
+Suffix domains:
+googleusercontent.com
+gstatic.com
+
+Do not place:
+
+- Google Meet media
+- YouTube video domains
+- Google video/CDN
+- every Google API
+
+inside the same default WARP preset.
+
+They may be high-bandwidth or latency-sensitive.
+
+Show this warning:
+
+WARP may reduce or increase CAPTCHA challenges depending on the current WARP exit IP and website reputation. It cannot guarantee CAPTCHA-free browsing.
+
+Allow the administrator to enable presets with one click.
+
+==================================================
+19. ADD DOMAIN MODAL
+==================================================
+
+Add Domain Set modal:
+
+Name:
+Description:
+Route:
+- WARP for Smart mode
+- Direct exception for Browsing WARP
+
+Scope:
+- All applicable accounts
+
+Match Type:
+- Exact Domain
+- Domain Suffix
+
+Domain:
+Priority:
+Enabled:
+
+Buttons:
+
+Validate
+Test Route
+Save
+Cancel
+
+Changing a domain should invalidate its previous validation result.
+
+Do not perform continuous network tests while typing.
+
+Use an explicit Test Route button.
+
+Testing must run in the control plane and be rate-limited.
+
+==================================================
+20. QUICK ADD FROM CONNECTION MONITOR
+==================================================
+
+In the authenticated Connection Monitor, show:
+
+- destination
+- selected route
+- selected client mode
+- matched rule/domain set
+- connect latency
+- direct or WARP
+
+Add administrator actions:
+
+- Add exact domain to Smart WARP
+- Add suffix to Smart WARP
+- Add exact domain to Browsing Direct Exceptions
+- Add suffix to Browsing Direct Exceptions
+
+Before adding a suffix, show the exact normalized suffix and matching examples.
+
+Do not automatically add every related CDN or API domain.
+
+The administrator decides which observed domains belong in the set.
+
+Do not log or display:
+
+- full URLs
+- query parameters
+- cookies
+- authorization headers
+
+==================================================
+21. GLOBAL RULE BEHAVIOR
+==================================================
+
+In the first version, domain rules are global.
+
+Example:
+
+Administrator adds:
+
+example.com
+as a Smart WARP suffix.
+
+Result:
+
+- all users connected with Smart Selective use WARP for new connections to example.com and its subdomains
+- Browsing WARP users already use WARP by default
+- Low Latency Direct users remain direct
+- existing open connections are not switched
+- users do not need to re-import subscriptions
+- users normally only need to reopen the affected website connection
+
+Display this clearly in the dashboard:
+
+Applies to all Smart-mode accounts.
+Existing connections keep their current route.
+New connections use the updated rule.
+
+==================================================
+22. IMMUTABLE ROUTE TABLE UPDATE
+==================================================
+
+Compile domain configuration into immutable route tables.
+
+Suggested model:
+
+struct RouteModeTables {
+    smart: Arc<CompiledRouteTable>,
+    browsing_warp: Arc<CompiledRouteTable>,
+    low_latency_direct: Arc<CompiledRouteTable>,
+    generation: u64,
+}
+
+Publish using:
+
+ArcSwap<RouteModeTables>
+
+When an administrator changes a domain set:
+
+1. Authenticate the request.
+2. Validate CSRF.
+3. Validate and normalize the domains.
+4. Create a staged configuration update.
+5. Compile new route tables outside state locks.
+6. Use bounded `spawn_blocking` only when compilation is CPU-heavy.
+7. Publish the completed route tables atomically.
+8. Persist through the existing ordered persistence worker.
+9. Do not restart the VPN process.
+10. Do not restart Reality listeners.
+11. Do not restart WARP.
+12. Do not disconnect existing sessions.
+
+At connection setup:
+
+1. Determine the selected profile mode.
+2. Load the route-table Arc once.
+3. Resolve the destination route once.
+4. Store the selected outbound in the connection context.
+5. Enter the existing forwarding path.
+
+Never perform domain-rule lookup inside:
+
+- TCP copy loops
+- UDP packet loops
+- quota loops
+- rate limiter loops
+- dashboard polling handlers
+
+==================================================
+23. WARP FAILURE BEHAVIOR
+==================================================
+
+Smart mode:
+
+- non-matching traffic remains direct
+- matching WARP domains follow the configured WARP failure policy
+- do not delay direct traffic while checking WARP
+
+Browsing WARP:
+
+- WARP by default
+- Direct Exceptions remain direct
+- fail fast or use explicit configured fallback when WARP is unavailable
+
+Low Latency Direct:
+
+- never consult WARP health
+- never wait for WARP
+- always direct
+
+WARP health checks must run periodically in the control plane.
+
+Do not run:
+
+- warp-cli
+- systemctl
+- external HTTP health requests
+- route commands
+
+inside dashboard request handlers or connection hot paths.
+
+==================================================
+24. ADMIN ROUTING APIs
+==================================================
+
+Add protected administrator endpoints:
+
+GET    /api/admin/routing/warp-domain-sets
+POST   /api/admin/routing/warp-domain-sets
+PUT    /api/admin/routing/warp-domain-sets/:id
+DELETE /api/admin/routing/warp-domain-sets/:id
+POST   /api/admin/routing/warp-domain-sets/:id/test
+
+GET    /api/admin/routing/direct-exception-sets
+POST   /api/admin/routing/direct-exception-sets
+PUT    /api/admin/routing/direct-exception-sets/:id
+DELETE /api/admin/routing/direct-exception-sets/:id
+POST   /api/admin/routing/direct-exception-sets/:id/test
+
+All mutating requests require:
+
+- authenticated administrator session
+- CSRF token
+- content-length limit
+- input validation
+- request rate limit
+
+Subscription users must not access these APIs.
+
+==================================================
+25. DASHBOARD PERFORMANCE
+==================================================
+
+Keep existing cached dashboard architecture.
+
+Dashboard handlers should:
+
+- verify the lightweight signed session
+- load cached bytes
+- return immediately
+
+Do not:
+
+- run Argon2
+- serialize all users
+- read `/proc`
+- call WARP
+- compile route tables
+- read configuration files
+- perform DNS queries
+
+during normal dashboard GET requests.
+
+The WARP domain-management APIs may perform control-plane work only after explicit administrator actions.
+
+Domain rule changes are rare and must not affect packet forwarding.
+
+==================================================
+26. PASSWORD CHANGE PERFORMANCE
+==================================================
+
+Password changes and logins are rare control-plane operations.
+
+Run password verification and hashing through:
+
+spawn_blocking
+
+with:
+
+admin_auth_cpu semaphore capacity 1
+
+Do not share this semaphore with:
+
+- dashboard cache generation
+- Reality handshake semaphore
+- persistence worker
+- WARP health checks
+- routing table publication
+
+The cached dashboard must remain servable while a password hash operation runs.
+
+On one CPU, password hashing still competes for physical CPU time, so:
+
+- use bounded attempts
+- use moderate Argon2 parameters
+- rate-limit login
+- never allow overlapping password hashes
+
+==================================================
+27. CONFIGURATION AND MIGRATION
+==================================================
+
+Do not place administrator credentials in the ordinary VPN config.
+
+Paths:
+
+config.json
+data/admin_credentials.json
+
+Upgrade scripts must preserve both.
+
+Upgrade behavior:
+
+1. Back up the current binary.
+2. Back up config.json.
+3. Back up admin_credentials.json.
+4. Upload the new binary under a temporary name.
+5. Stop the service.
+6. Atomically replace the binary.
+7. Start the service.
+8. Check a local health endpoint.
+9. Roll back the binary when startup fails.
+10. Never overwrite credentials with development files.
+
+Existing installation without administrator credentials:
+
+- enter first-run initialization behavior
+- do not expose the admin panel unauthenticated
+
+Existing subscriptions must continue working.
+
+==================================================
+28. LOGGING AND AUDIT EVENTS
+==================================================
+
+Record minimal security audit events:
+
+- successful administrator login
+- failed login count/rate-limit event
+- logout
+- password changed
+- subscription token regenerated
+- WARP domain set created
+- WARP domain set updated
+- WARP domain set deleted
+- Direct Exception set updated
+
+Audit entry should include:
+
+- timestamp
+- action
+- normalized source IP where appropriate
+- success/failure
+- affected object ID/name
+
+Never log:
+
+- submitted passwords
+- password hashes
+- session cookies
+- CSRF tokens
+- subscription tokens
+- Reality private keys
+- full VLESS links
+
+Use rate-limited warnings for repeated failed logins.
+
+Do not synchronously write an audit file for every request.
+
+Use the existing bounded persistence/control-plane mechanism or aggregated journal logging.
+
+==================================================
+29. SECURITY HEADERS
+==================================================
+
+For administration pages, add:
+
+Content-Security-Policy
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+X-Frame-Options: DENY
+Permissions-Policy with unnecessary features disabled
+Cache-Control: no-store for login/security pages
+
+For cached dashboard JSON authenticated responses, preserve the existing appropriate cache and ETag behavior.
+
+Do not allow external scripts on login or dashboard pages unless explicitly required and protected by CSP.
+
+Prefer bundled local JavaScript and CSS.
+
+==================================================
+30. TESTS — FIRST RUN AND PASSWORDS
+==================================================
+
+Add tests for:
+
+1. First interactive run requests a password.
+2. Password confirmation mismatch is rejected.
+3. Short password is rejected.
+4. Password is never written in plaintext.
+5. Credential file contains a valid Argon2id PHC hash.
+6. Credential file permission is `0600` on Linux.
+7. Credential writes use temporary file and atomic rename.
+8. Non-interactive startup without credentials fails closed.
+9. No default password exists.
+10. CLI initialization succeeds.
+11. CLI reset rotates the session epoch.
+12. CLI password-file mode rejects unsafe file permissions.
+13. Password verification occurs through blocking work.
+14. Only one password hash job runs at a time.
+
+==================================================
+31. TESTS — AUTHENTICATION
+==================================================
+
+Add tests for:
+
+1. Unauthenticated `/` returns the login page.
+2. Correct password creates a valid session.
+3. Wrong password returns a generic failure.
+4. Protected APIs reject unauthenticated requests.
+5. Session HMAC tampering is rejected.
+6. Expired sessions are rejected.
+7. Session epoch mismatch is rejected.
+8. Password change invalidates older sessions.
+9. Logout clears the cookie.
+10. CSRF is required for mutating requests.
+11. GET requests do not require CSRF.
+12. Login rate limiting works.
+13. Login IP tracking is bounded.
+14. Dashboard GET does not perform Argon2.
+15. Dashboard cached handler remains O(1).
+
+==================================================
+32. TESTS — SUBSCRIPTIONS
+==================================================
+
+Add tests for:
+
+1. Valid subscription token works without administrator login.
+2. Invalid subscription token fails generically.
+3. Subscription pages cannot access administrator APIs.
+4. Subscription response never exposes a Reality private key.
+5. Subscription token is cryptographically random.
+6. Token can be revoked.
+7. Token can be regenerated.
+8. Old token stops working after regeneration.
+9. Smart, Browsing WARP, and Low Latency profiles remain downloadable.
+10. Subscription page has no administrator routing-edit controls.
+
+==================================================
+33. TESTS — DOMAIN ROUTING
+==================================================
+
+Add tests for:
+
+1. Smart mode defaults to direct.
+2. Enabled Smart global domain set selects WARP.
+3. Disabled Smart domain set is ignored.
+4. Exact domain matches only the exact domain.
+5. Suffix matches the root and proper subdomains.
+6. `notexample.com` does not match `example.com`.
+7. Domain normalization works.
+8. Browsing WARP defaults to WARP.
+9. Browsing Direct Exception selects direct.
+10. Low Latency mode never selects WARP.
+11. Global Smart rule applies to all Smart users.
+12. Global rule does not change Low Latency users.
+13. Route-table update affects new connections only.
+14. Existing connections keep their selected route.
+15. Rule update does not restart listeners.
+16. Rule update does not restart WARP.
+17. Rule update does not disconnect VPN users.
+18. Infrastructure direct rules override administrator WARP rules.
+19. Subscription users cannot edit routing.
+20. No routing lookup exists inside copy loops.
+
+==================================================
+34. INTEGRATION AND LOAD TESTS
+==================================================
+
+Test:
+
+- High-throughput Reality traffic while opening the login page.
+- High-throughput Reality traffic during successful login.
+- High-throughput traffic during one failed login.
+- High-throughput traffic while changing the password.
+- Dashboard cached responses while Argon2 is running.
+- Dashboard cached responses during persistence.
+- Smart domain-set update while users are online.
+- Browsing Direct Exception update while users are online.
+- Subscription profile downloads without admin login.
+- Simultaneous Smart, Browsing WARP, and Low Latency users.
+- WARP failure while Low Latency traffic remains active.
+- Direct gaming traffic during WARP browsing traffic.
+
+Measure:
+
+- VPN p50
+- VPN p95
+- VPN p99
+- maximum latency
+- jitter
+- packet loss
+- throughput
+- process CPU
+- RSS
+- event-loop lag
+- login hash duration
+- dashboard response latency
+- route-table compilation duration
+
+==================================================
+35. PERFORMANCE ACCEPTANCE
+==================================================
+
+Requirements:
+
+- No authentication check inside packet-copy loops.
+- No password operation inside packet-copy loops.
+- No WARP domain lookup inside packet-copy loops.
+- Route selection occurs once per outbound connection.
+- Administrator session validation uses only lightweight cookie/HMAC work.
+- Argon2 runs only during login/password changes.
+- Maximum one Argon2 task at a time.
+- Dashboard cached GET requests perform no serialization.
+- Domain-set edits do not disconnect active users.
+- Subscription pages remain available without admin login.
+- Low Latency mode performs no WARP check.
+- Smart non-matching traffic performs no WARP connection.
+- Dashboard authentication must not increase idle VPN p95 by more than 1 ms.
+- An open authenticated dashboard must not increase loaded VPN p95 by more than 2 ms.
+- Throughput regression must remain below 1–2%.
+- No repeated application-caused 200–900 ms spikes.
+- No plaintext password storage.
+- No unauthenticated administrator endpoint.
+- No public insecure bootstrap mode.
+
+==================================================
+36. BUILD AND FINAL REPORT
+==================================================
+
+Run:
+
+cargo fmt --check
+cargo check --release
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --release
+cargo build --release
+
+Provide a final report containing:
+
+- files changed
+- new dependencies
+- first-run initialization behavior
+- non-interactive startup behavior
+- credential-file path and permissions
+- password hashing parameters
+- session design
+- CSRF design
+- login rate limits
+- protected administrator routes
+- public subscription routes
+- password-change workflow
+- Smart WARP domain dashboard
+- Browsing WARP Direct Exceptions dashboard
+- global rule behavior
+- route-table publication behavior
+- confirmation that existing connections are not changed
+- confirmation that packet-copy loops were not modified
+- tests executed
+- before-and-after dashboard latency
+- before-and-after VPN p50/p95/p99
+- before-and-after throughput
+- known limitation when the single CPU reaches sustained 100%

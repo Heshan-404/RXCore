@@ -1,68 +1,50 @@
-$s = [char]47
-$vps = "root@162.243.68.194"
+﻿param(
+    [string]$VpsHost = "root@172.236.153.131",
+    [switch]$Rebuild
+)
+
 $ErrorActionPreference = "Stop"
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-Write-Host "1. Building target_core in WSL..." -ForegroundColor Cyan
-wsl bash -i -c "cd ${s}mnt${s}c${s}Users${s}Heshan${s}Desktop${s}Ruve${s}target_core && cargo build --release"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Build failed" -ForegroundColor Red
-    exit 1
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host "      Ruve VPN One-Click Deployment      " -ForegroundColor Cyan
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host "Target VPS: $VpsHost" -ForegroundColor Yellow
+
+$binaryPath = Join-Path $ScriptDir "target_core\target\release\target_core"
+
+# Check if binary exists or needs building
+if ($Rebuild -or -not (Test-Path $binaryPath)) {
+    Write-Host "[1/4] Building target_core binary..." -ForegroundColor Cyan
+    if (Get-Command wsl -ErrorAction SilentlyContinue) {
+        $wslPath = $ScriptDir.Replace("\", "/").Replace("C:", "/mnt/c")
+        wsl bash -i -c "cd '$wslPath/target_core' && cargo build --release"
+    } else {
+        Write-Host "WSL not found locally. Using pre-existing binary or building on VPS." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "[1/4] Using pre-compiled release binary..." -ForegroundColor Green
 }
 
-$ssh_opts = @("-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3")
+$ssh_opts = @("-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3", "-o", "StrictHostKeyChecking=accept-new")
 
-Write-Host "2. Stopping target_core and autoshield on VPS..." -ForegroundColor Cyan
-ssh $ssh_opts $vps "sudo systemctl stop target_core.service || true"
-ssh $ssh_opts $vps "sudo systemctl stop warp_autoshield.service || true"
-ssh $ssh_opts $vps "sudo pkill -9 target_core || true"
+# Step 2: Upload files
+Write-Host "[2/4] Uploading files to VPS..." -ForegroundColor Cyan
+scp $ssh_opts "$binaryPath" "${VpsHost}:target_core.tmp"
+scp $ssh_opts (Join-Path $ScriptDir "config.json") "${VpsHost}:"
+scp $ssh_opts (Join-Path $ScriptDir "install.sh") "${VpsHost}:"
+scp $ssh_opts (Join-Path $ScriptDir "warp_autoshield.sh") "${VpsHost}:"
 
-Write-Host "2.5. Cleaning up old VPN files, logs, and server storage..." -ForegroundColor Cyan
-ssh $ssh_opts $vps "sudo systemctl stop warp-svc.service || true"
-ssh $ssh_opts $vps "sudo pkill -9 -f apt || true"
-ssh $ssh_opts $vps "sudo pkill -9 -f dpkg || true"
-ssh $ssh_opts $vps "sudo rm -f ${s}var${s}lib${s}dpkg${s}lock-frontend ${s}var${s}lib${s}dpkg${s}lock ${s}var${s}cache${s}apt${s}archives${s}lock || true"
-ssh $ssh_opts $vps "sudo dpkg --configure -a || true"
-ssh $ssh_opts $vps "sudo apt-get purge -y cloudflare-warp || true"
-ssh $ssh_opts $vps "sudo apt-get autoremove -y || true"
-ssh $ssh_opts $vps "sudo rm -rf ${s}var${s}log${s}cloudflare-warp ${s}var${s}lib${s}cloudflare-warp ${s}etc${s}apt${s}sources.list.d${s}cloudflare-client.list ${s}usr${s}share${s}keyrings${s}cloudflare-warp-archive-keyring.gpg ${s}root${s}target_core ${s}root${s}config.json ${s}root${s}warp_setup.sh ${s}root${s}warp_autoshield.sh ${s}root${s}target_core.tmp"
-ssh $ssh_opts $vps "sudo journalctl --vacuum-size=10M || true"
-ssh $ssh_opts $vps "sudo find ${s}var${s}log -type f -name '*.log' -exec truncate -s 0 {} + || true"
-ssh $ssh_opts $vps "sudo sed -i 's|#SystemMaxUse=|SystemMaxUse=50M|' ${s}etc${s}systemd${s}journald.conf || true"
-ssh $ssh_opts $vps "sudo sed -i 's|SystemMaxUse=.*|SystemMaxUse=50M|' ${s}etc${s}systemd${s}journald.conf || true"
-ssh $ssh_opts $vps "sudo systemctl restart systemd-journald || true"
+# Step 3: Run installer & apply configurations
+Write-Host "[3/4] Installing and applying system configurations on VPS..." -ForegroundColor Cyan
+ssh $ssh_opts $VpsHost "sudo mv -f target_core.tmp /root/target_core && sudo chmod +x /root/target_core /root/install.sh /root/warp_autoshield.sh && sudo bash /root/install.sh"
 
-Write-Host "3. Uploading files to VPS..." -ForegroundColor Cyan
-scp $ssh_opts target_core\target\release\target_core ${vps}:target_core.tmp
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Upload binary failed" -ForegroundColor Red
-    exit 1
-}
-scp $ssh_opts config.json ${vps}:
-scp $ssh_opts warp_setup.sh ${vps}:
-scp $ssh_opts warp_autoshield.sh ${vps}:
+# Step 4: Verification
+Write-Host "[4/4] Verifying services..." -ForegroundColor Cyan
+ssh $ssh_opts $VpsHost "systemctl is-active target_core.service warp_autoshield.service"
 
-Write-Host "4. Replacing binary and setting execute permissions..." -ForegroundColor Cyan
-ssh $ssh_opts $vps "sudo mv target_core.tmp ${s}root${s}target_core && (sudo cp config.json ${s}root${s} 2>${s}dev${s}null || true) && (sudo cp warp_setup.sh ${s}root${s} 2>${s}dev${s}null || true) && (sudo cp warp_autoshield.sh ${s}root${s} 2>${s}dev${s}null || true) && sudo chmod +x ${s}root${s}target_core ${s}root${s}warp_setup.sh ${s}root${s}warp_autoshield.sh"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Replacing binary and setting permissions failed" -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "5. Running warp setup on VPS..." -ForegroundColor Cyan
-ssh $ssh_opts $vps "sudo bash ${s}root${s}warp_setup.sh"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "WARP setup failed" -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "6. Ensuring warp_autoshield service is running on VPS..." -ForegroundColor Cyan
-ssh $ssh_opts $vps "sudo systemctl restart warp_autoshield.service || true"
-
-Write-Host "7. Starting target_core on VPS..." -ForegroundColor Cyan
-ssh $ssh_opts $vps "sudo systemctl restart target_core.service"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Failed to start target_core on VPS" -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "Deployment completed successfully!" -ForegroundColor Green
+Write-Host "`n=========================================" -ForegroundColor Green
+Write-Host "   Deployment Completed Successfully!    " -ForegroundColor Green
+Write-Host "=========================================" -ForegroundColor Green
+Write-Host "Admin Portal : http://$($VpsHost.Replace('root@','')):9091/" -ForegroundColor Yellow
+Write-Host "Default Pass : RuveAdmin@2026!" -ForegroundColor Yellow

@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use rand::Rng;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{sleep, timeout, Duration};
 use uuid::Uuid;
 
-use crate::inbound::InboundTransportStream;
 use crate::config::FragmentSettings;
+use crate::inbound::InboundTransportStream;
 use crate::outbound::OutboundHandler;
 use crate::state::EngineState;
 
@@ -117,7 +117,11 @@ impl OutboundHandler for FragmentOutbound {
                                     break;
                                 }
 
-                                if out_writer.write_all(&buf[offset..offset + chunk_size]).await.is_err() {
+                                if out_writer
+                                    .write_all(&buf[offset..offset + chunk_size])
+                                    .await
+                                    .is_err()
+                                {
                                     return;
                                 }
                                 tx_counter.fetch_add(chunk_size as u64, Ordering::Relaxed);

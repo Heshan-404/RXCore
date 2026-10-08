@@ -1,8 +1,23 @@
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::large_enum_variant,
+    clippy::new_without_default,
+    clippy::manual_contains,
+    clippy::collapsible_if,
+    clippy::iter_kv_map,
+    clippy::manual_range_contains,
+    clippy::io_other_error,
+    clippy::needless_borrows_for_generic_args,
+    clippy::while_let_loop,
+    clippy::redundant_pattern_matching
+)]
+
 use std::net::Ipv4Addr;
 use std::sync::Arc;
-use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{info, error, Level};
+use tokio::net::TcpStream;
+use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
@@ -12,18 +27,18 @@ struct DangerServerCertVerifier;
 impl rustls::client::danger::ServerCertVerifier for DangerServerCertVerifier {
     fn verify_server_cert(
         &self,
-        _end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
+        _end_entity: &rustls_pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls_pki_types::CertificateDer<'_>],
+        _server_name: &rustls_pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
+        _now: rustls_pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
     fn verify_tls12_signature(
         &self,
         _message: &[u8],
-        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _cert: &rustls_pki_types::CertificateDer<'_>,
         _dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
@@ -31,7 +46,7 @@ impl rustls::client::danger::ServerCertVerifier for DangerServerCertVerifier {
     fn verify_tls13_signature(
         &self,
         _message: &[u8],
-        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _cert: &rustls_pki_types::CertificateDer<'_>,
         _dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
@@ -46,20 +61,8 @@ impl rustls::client::danger::ServerCertVerifier for DangerServerCertVerifier {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let _ = rustls::crypto::ring::default_provider().install_default();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .on_thread_start(|| {
-            static CORE_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-            let core_ids = core_affinity::get_core_ids().unwrap_or_default();
-            if !core_ids.is_empty() {
-                let limit = 2;
-                let idx = CORE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let target_idx = ((idx % limit) + 2) % core_ids.len();
-                let core_id = core_ids[target_idx];
-                core_affinity::set_for_current(core_id);
-            }
-        })
         .build()?;
 
     runtime.block_on(async {
@@ -77,20 +80,31 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         {
             let wintun = unsafe { wintun::load_from_path("wintun.dll") }
                 .map_err(|e| format!("Failed to load Wintun driver: {}", e))?;
-            
+
             let adapter = wintun::Adapter::create(&wintun, "RuvePool", "RuveTun", None)
                 .map_err(|e| format!("Failed to create adapter: {}", e))?;
-            
-            adapter.set_address(std::net::Ipv4Addr::new(10, 0, 0, 2)).unwrap();
-            adapter.set_netmask(std::net::Ipv4Addr::new(255, 255, 255, 0)).unwrap();
-            
+
+            adapter
+                .set_address(std::net::Ipv4Addr::new(10, 0, 0, 2))
+                .unwrap();
+            adapter
+                .set_netmask(std::net::Ipv4Addr::new(255, 255, 255, 0))
+                .unwrap();
+
             let session = Arc::new(adapter.start_session(wintun::MAX_RING_CAPACITY).unwrap());
             *wintun_session.lock() = Some(Arc::clone(&session));
 
             info!("TUN engine started, redirecting system traffic...");
 
             std::process::Command::new("netsh")
-                .args(&["interface", "ipv4", "set", "subinterface", "RuveTun", "metric=1"])
+                .args(&[
+                    "interface",
+                    "ipv4",
+                    "set",
+                    "subinterface",
+                    "RuveTun",
+                    "metric=1",
+                ])
                 .output()
                 .ok();
 
@@ -99,49 +113,57 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .args(&["add", "68.183.191.244", "192.168.8.1", "metric", "1"])
                 .output()
                 .ok();
-            
+
             std::process::Command::new("route")
-                .args(&["add", "0.0.0.0", "mask", "0.0.0.0", "10.0.0.1", "metric", "5"])
+                .args(&[
+                    "add", "0.0.0.0", "mask", "0.0.0.0", "10.0.0.1", "metric", "5",
+                ])
                 .output()
                 .ok();
 
             let (packet_tx, mut packet_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(2048);
             let session_read = Arc::clone(&session);
 
-            tokio::task::spawn_blocking(move || {
-                loop {
-                    match session_read.receive_blocking() {
-                        Ok(packet) => {
-                            let bytes = packet.bytes();
-                            if let Ok(value) = etherparse::SlicedPacket::from_ip(bytes) {
-                                if let Some(ip_slice) = value.ip {
-                                    let (dest_ip, is_local) = match ip_slice {
-                                        etherparse::InternetSlice::Ipv4(ipv4_slice, _) => {
-                                            let addr = std::net::Ipv4Addr::from(ipv4_slice.destination());
-                                            (std::net::IpAddr::V4(addr), addr.is_multicast() || addr.is_link_local() || addr.is_broadcast())
-                                        }
-                                        etherparse::InternetSlice::Ipv6(ipv6_slice, _) => {
-                                            let addr = std::net::Ipv6Addr::from(ipv6_slice.destination());
-                                            (std::net::IpAddr::V6(addr), addr.is_multicast())
-                                        }
-                                    };
-                                    if is_local {
-                                        continue;
+            tokio::task::spawn_blocking(move || loop {
+                match session_read.receive_blocking() {
+                    Ok(packet) => {
+                        let bytes = packet.bytes();
+                        if let Ok(value) = etherparse::SlicedPacket::from_ip(bytes) {
+                            if let Some(ip_slice) = value.ip {
+                                let (dest_ip, is_local) = match ip_slice {
+                                    etherparse::InternetSlice::Ipv4(ipv4_slice, _) => {
+                                        let addr =
+                                            std::net::Ipv4Addr::from(ipv4_slice.destination());
+                                        (
+                                            std::net::IpAddr::V4(addr),
+                                            addr.is_multicast()
+                                                || addr.is_link_local()
+                                                || addr.is_broadcast(),
+                                        )
                                     }
-                                    info!("TUN Encapsulating packet to: {}", dest_ip);
+                                    etherparse::InternetSlice::Ipv6(ipv6_slice, _) => {
+                                        let addr =
+                                            std::net::Ipv6Addr::from(ipv6_slice.destination());
+                                        (std::net::IpAddr::V6(addr), addr.is_multicast())
+                                    }
+                                };
+                                if is_local {
+                                    continue;
                                 }
-                            }
-                            if let Err(_) = packet_tx.blocking_send(bytes.to_vec()) {
-                                break;
+                                info!("TUN Encapsulating packet to: {}", dest_ip);
                             }
                         }
-                        Err(_) => break,
+                        if let Err(_) = packet_tx.blocking_send(bytes.to_vec()) {
+                            break;
+                        }
                     }
+                    Err(_) => break,
                 }
             });
 
             tokio::spawn(async move {
-                let mut outbound_vless = match establish_vless_outbound("68.183.191.244", 443).await {
+                let mut outbound_vless = match establish_vless_outbound("68.183.191.244", 443).await
+                {
                     Ok(out) => out,
                     Err(e) => {
                         error!("Failed to establish VLESS outbound: {}", e);
@@ -169,8 +191,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             if let Some(session) = wintun_session.lock().take() {
                 let _ = session.shutdown();
             }
-            std::process::Command::new("route").args(&["delete", "0.0.0.0"]).output().ok();
-            std::process::Command::new("route").args(&["delete", "68.183.191.244"]).output().ok();
+            std::process::Command::new("route")
+                .args(&["delete", "0.0.0.0"])
+                .output()
+                .ok();
+            std::process::Command::new("route")
+                .args(&["delete", "68.183.191.244"])
+                .output()
+                .ok();
         }
 
         Ok(())
@@ -194,7 +222,9 @@ async fn establish_vless_outbound(
         .with_root_certificates(rustls::RootCertStore::empty())
         .with_no_client_auth();
     #[cfg(target_os = "windows")]
-    config.dangerous().set_certificate_verifier(Arc::new(DangerServerCertVerifier));
+    config
+        .dangerous()
+        .set_certificate_verifier(Arc::new(DangerServerCertVerifier));
 
     #[cfg(not(target_os = "windows"))]
     let config = {
@@ -212,7 +242,7 @@ async fn establish_vless_outbound(
     config_final.alpn_protocols = vec![b"h2".to_vec(), vec![104, 116, 116, 112, 47, 49, 46, 49]];
 
     let connector = tokio_rustls::TlsConnector::from(Arc::new(config_final));
-    let server_name = rustls::pki_types::ServerName::try_from(sni_host.to_string())?.to_owned();
+    let server_name = rustls_pki_types::ServerName::try_from(sni_host.to_string())?.to_owned();
     let mut tls_stream = connector.connect(server_name, tcp).await?;
 
     let mut addr_payload = Vec::new();

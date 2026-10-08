@@ -11,7 +11,6 @@ iptables -D OUTPUT -p tcp -m string --string "info_hash=" --algo bm -j DROP 2>${
 iptables -D OUTPUT -p udp -m string --string "get_peers" --algo bm -j DROP 2>${s}dev${s}null || true
 iptables -D OUTPUT -p udp -m string --string "announce_peer" --algo bm -j DROP 2>${s}dev${s}null || true
 iptables -D OUTPUT -p udp -m string --string "find_node" --algo bm -j DROP 2>${s}dev${s}null || true
-iptables -D OUTPUT -p udp --dport 443 -j DROP 2>${s}dev${s}null || true
 
 # Apply optimized firewall rules
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
@@ -24,7 +23,6 @@ iptables -A OUTPUT -p tcp -m string --string "info_hash=" --algo bm -j DROP
 iptables -A OUTPUT -p udp -m string --string "get_peers" --algo bm -j DROP
 iptables -A OUTPUT -p udp -m string --string "announce_peer" --algo bm -j DROP
 iptables -A OUTPUT -p udp -m string --string "find_node" --algo bm -j DROP
-iptables -A OUTPUT -p udp --dport 443 -j DROP
 
 last_rotation=0
 while true; do

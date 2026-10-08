@@ -23,15 +23,15 @@ pub async fn sniff_sni(stream: &InboundTransportStream) -> Option<String> {
         InboundTransportStream::Plain(ref tcp) => {
             let mut buf = [0u8; 1024];
             let peek_fut = tcp.peek(&mut buf);
-            let n = match tokio::time::timeout(std::time::Duration::from_millis(100), peek_fut).await {
-                Ok(Ok(n)) => n,
-                _ => return None,
-            };
+            let n =
+                match tokio::time::timeout(std::time::Duration::from_millis(100), peek_fut).await {
+                    Ok(Ok(n)) => n,
+                    _ => return None,
+                };
             parse_sni_from_bytes(&buf[..n])
         }
-        InboundTransportStream::Tls(ref _tls) => {
-            None
-        }
+        InboundTransportStream::Tls(ref _tls) => None,
+        InboundTransportStream::Reality(ref _tls) => None,
     }
 }
 
@@ -62,7 +62,8 @@ pub fn parse_sni_from_bytes(buf: &[u8]) -> Option<String> {
         return None;
     }
 
-    let hello_len = ((payload[1] as usize) << 16) | ((payload[2] as usize) << 8) | (payload[3] as usize);
+    let hello_len =
+        ((payload[1] as usize) << 16) | ((payload[2] as usize) << 8) | (payload[3] as usize);
     if payload.len() < 4 + hello_len {
         return None;
     }
@@ -126,7 +127,8 @@ pub fn parse_sni_from_bytes(buf: &[u8]) -> Option<String> {
 
             while inner + 3 <= index + ext_data_len {
                 let name_type = payload[inner];
-                let name_len = u16::from_be_bytes([payload[inner + 1], payload[inner + 2]]) as usize;
+                let name_len =
+                    u16::from_be_bytes([payload[inner + 1], payload[inner + 2]]) as usize;
                 inner += 3;
 
                 if inner + name_len > index + ext_data_len {

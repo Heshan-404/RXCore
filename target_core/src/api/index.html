@@ -157,6 +157,15 @@
             box-shadow: none;
         }
 
+        .btn-danger {
+            background: linear-gradient(135deg, var(--danger), #b91c1c);
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-danger:hover {
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.45);
+        }
+
         /* Metrics Grid */
         .metrics-grid {
             display: grid;
@@ -219,30 +228,12 @@
             color: var(--primary);
         }
 
-        .metric-card:nth-child(2) .metric-icon {
-            color: var(--secondary);
-        }
-
-        .metric-card:nth-child(3) .metric-icon {
-            color: var(--accent-pink);
-        }
-
-        .metric-card:nth-child(4) .metric-icon {
-            color: var(--accent-orange);
-        }
-
         /* Section Layouts */
         .panel-row {
             display: grid;
-            grid-template-columns: 3fr 2fr;
+            grid-template-columns: 1fr;
             gap: 1.5rem;
             margin-bottom: 2.5rem;
-        }
-
-        @media (max-width: 1024px) {
-            .panel-row {
-                grid-template-columns: 1fr;
-            }
         }
 
         .panel-card {
@@ -253,7 +244,7 @@
             padding: 1.75rem;
             display: flex;
             flex-direction: column;
-            min-height: 400px;
+            min-height: 300px;
         }
 
         .panel-header {
@@ -275,99 +266,7 @@
             color: var(--primary);
         }
 
-        /* User Statistics Lists */
-        .user-stats-list {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            max-height: 450px;
-            overflow-y: auto;
-            padding-right: 0.5rem;
-        }
-
-        /* Scrollbar Styling */
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .user-card {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 1.25rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        .user-card:hover {
-            border-color: rgba(99, 102, 241, 0.25);
-            background: rgba(255, 255, 255, 0.03);
-        }
-
-        .user-info {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .user-email {
-            font-weight: 600;
-            font-size: 0.95rem;
-            color: #fff;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .user-email::before {
-            content: '';
-            width: 6px;
-            height: 6px;
-            background-color: var(--secondary);
-            border-radius: 50%;
-            display: inline-block;
-        }
-
-        .user-badge {
-            font-size: 0.75rem;
-            background: rgba(20, 184, 166, 0.1);
-            color: var(--secondary);
-            padding: 0.25rem 0.6rem;
-            border-radius: 20px;
-            font-weight: 600;
-        }
-
-        .user-traffic-details {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-        }
-
-        .traffic-stat {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .traffic-stat span.value {
-            color: #fff;
-            font-weight: 500;
-        }
-
-        /* Connections Table */
+        /* Table container */
         .table-container {
             width: 100%;
             overflow-x: auto;
@@ -394,6 +293,7 @@
             padding: 1rem;
             border-bottom: 1px solid var(--border-color);
             color: var(--text-muted);
+            vertical-align: middle;
         }
 
         tr:last-child td {
@@ -405,23 +305,18 @@
             color: var(--text-main);
         }
 
-        .dest-highlight {
-            color: #fff;
-            font-weight: 500;
+        .action-btns {
+            display: flex;
+            gap: 0.5rem;
         }
 
-        .sni-badge {
-            background: rgba(217, 70, 239, 0.1);
-            color: var(--accent-pink);
-            border: 1px solid rgba(217, 70, 239, 0.2);
-            padding: 0.25rem 0.5rem;
-            border-radius: 6px;
+        .small-btn {
+            padding: 0.4rem 0.8rem;
             font-size: 0.8rem;
-            font-weight: 500;
-            display: inline-block;
+            border-radius: 6px;
         }
 
-        /* Config Modal styling */
+        /* Modals and forms */
         .modal {
             display: none;
             position: fixed;
@@ -448,7 +343,7 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 20px;
             width: 90%;
-            max-width: 800px;
+            max-width: 600px;
             padding: 2rem;
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
             transform: scale(0.9);
@@ -468,6 +363,8 @@
             align-items: center;
             margin-bottom: 1.5rem;
             padding-bottom: 1rem;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
@@ -488,39 +385,39 @@
             justify-content: flex-end;
             gap: 1rem;
             padding-top: 1rem;
+            border-bottom-left-radius: 20px;
+            border-bottom-right-radius: 20px;
             border-top: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        textarea.config-area {
-            width: 100%;
-            height: 400px;
-            background: #07070a;
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 1rem;
-            color: #38bdf8;
-            font-family: monospace;
-            font-size: 0.85rem;
-            resize: none;
-            outline: none;
+        .form-group {
+            margin-bottom: 1.25rem;
         }
 
-        textarea.config-area:focus {
+        .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            background: #07070a;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            color: #fff;
+            outline: none;
+            font-size: 0.9rem;
+        }
+
+        .form-group input:focus {
             border-color: var(--primary);
         }
 
-        .close-btn {
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-        }
-
-        .close-btn:hover {
-            color: #fff;
-        }
-
-        /* Alert and notification toasts */
+        /* Toast messaging */
         .toast {
             position: fixed;
             bottom: 2rem;
@@ -550,7 +447,6 @@
             opacity: 1;
         }
 
-        /* Keyframes */
         @keyframes pulse-glow {
             0% { box-shadow: 0 0 15px rgba(99, 102, 241, 0.3); }
             100% { box-shadow: 0 0 25px rgba(99, 102, 241, 0.6); }
@@ -569,7 +465,6 @@
         <header>
             <div class="logo-section">
                 <div class="logo-icon">
-                    <!-- Dynamic network tunnel SVG logo -->
                     <svg viewBox="0 0 24 24">
                         <path d="M4 15h2v3h12v-3h2v3c0 1.1-.9 2-2 2H6c-1.1 0-2-.9-2-2v-3zm16-4h-2V8H6v3H4V8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v3zm-5-3h-2v3h-4v2h4v3h2v-3h4v-2h-4V8z"/>
                     </svg>
@@ -585,17 +480,29 @@
                     <span class="status-dot"></span>
                     CORE ONLINE
                 </div>
-                <button class="btn" id="open-config-btn">
+                <a href="/connections-monitor" class="btn btn-secondary" style="text-decoration: none; padding: 10px 20px; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 8px;">
                     <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+                    </svg>
+                    Connection Monitor
+                </a>
+                <button class="btn btn-secondary" id="settings-btn" style="padding: 10px 20px; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 8px;">
+                    <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.991l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.645-.869l.214-1.28z" />
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    Configure Inbounds
+                    Settings
+                </button>
+                <button class="btn" id="add-user-btn">
+                    <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    Create VPN Account
                 </button>
             </div>
         </header>
 
-        <!-- Metrics overview -->
+        <!-- Metrics Overview -->
         <div class="metrics-grid">
             <div class="metric-card">
                 <div class="metric-info">
@@ -634,111 +541,284 @@
             </div>
 
             <div class="metric-card">
+                <div class="metric-info" style="width: 100%;">
+                    <h3>System Load</h3>
+                    <div class="value" id="cpu-usage">0%</div>
+                    <div class="progress-bar-bg" style="height: 4px; margin-top: 8px;">
+                        <div class="progress-bar-fill" id="cpu-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+                <div class="metric-icon" style="margin-left: 10px;">
+                    <svg style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M12 18.75v1.5m-7.5-7.5H3m18 0h-1.5M9 6h6M9 18h6m-9-9h9m-9 6h9" />
+                    </svg>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-info" style="width: 100%;">
+                    <h3>RAM Usage</h3>
+                    <div class="value" id="ram-usage" style="font-size: 1.25rem; font-weight: 600; padding: 0.35rem 0;">0.0 GB / 0.0 GB</div>
+                    <div class="progress-bar-bg" style="height: 4px; margin-top: 4px;">
+                        <div class="progress-bar-fill" id="ram-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+                <div class="metric-icon" style="margin-left: 10px;">
+                    <svg style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 003 3m13.5-3a3 3 0 01-3-3m3 3a3 3 0 003 3M6.75 6.75h10.5a1.5 1.5 0 011.5 1.5v3.75a1.5 1.5 0 01-1.5 1.5H6.75a1.5 1.5 0 01-1.5-1.5V8.25a1.5 1.5 0 011.5-1.5z" />
+                    </svg>
+                </div>
+            </div>
+
+            <div class="metric-card">
                 <div class="metric-info">
-                    <h3>User Accounts</h3>
-                    <div class="value" id="tot-users">0</div>
+                    <h3>System Uptime</h3>
+                    <div class="value" id="sys-uptime" style="font-size: 1.5rem;">0d 0h 0m</div>
                 </div>
                 <div class="metric-icon">
                     <svg style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A11.386 11.386 0 0110.089 20.08l-.071-.002c-2.733-.007-5.27-.32-7.575-.928m18.199-8.996c0-1.346-.34-2.61-.941-3.72M18.799 10.186a1.5 1.5 0 00-.584-2.811 11.454 11.454 0 00-6.43 0 1.5 1.5 0 00-.584 2.811m0 0c.071.07.137.147.198.23m-1.298-2.54c.4-.836.974-1.565 1.677-2.148m0 0a11.386 11.386 0 0110.089 2.088M9 7.75A1.75 1.75 0 117.25 6 1.75 1.75 0 019 7.75v0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                 </div>
             </div>
         </div>
 
-        <!-- Dashboard Layout panels -->
+        <!-- Panels -->
         <div class="panel-row">
-            <!-- Left: Active Sockets -->
             <div class="panel-card">
                 <div class="panel-header">
-                    <h2>
-                        <svg style="width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12M8.25 17.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-                        </svg>
-                        Live Connection Routes
-                    </h2>
+                    <h2>VPN Users Account Registry & Quotas</h2>
                 </div>
                 <div class="table-container">
                     <table>
                         <thead>
                             <tr>
-                                <th>Client IP</th>
-                                <th>Destination Address</th>
-                                <th>Sniffed SNI</th>
-                                <th>Outbound Route</th>
-                                <th>Data (Rx / Tx)</th>
-                                <th>Uptime</th>
+                                <th>Email / Username</th>
+                                <th>UUID</th>
+                                <th>Speed Limit</th>
+                                <th>Expiry Time</th>
+                                <th>Remaining Quota</th>
+                                <th>Total Usage (Down/Up)</th>
+                                <th>Subscription Actions</th>
                             </tr>
                         </thead>
-                        <tbody id="connections-table-body">
+                        <tbody id="users-table-body">
                             <tr>
-                                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 3rem 0;">No active connections running</td>
+                                <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 3rem 0;">No accounts found</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
-
-            <!-- Right: Registered Accounts metrics -->
-            <div class="panel-card">
-                <div class="panel-header">
-                    <h2>
-                        <svg style="width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
-                        </svg>
-                        Users Traffic metrics
-                    </h2>
-                </div>
-                <div class="user-stats-list" id="users-stats-container">
-                    <p style="text-align: center; color: var(--text-muted); padding: 3rem 0;">No user stats collected yet</p>
-                </div>
-            </div>
         </div>
     </div>
 
-    <!-- Edit Config Modal -->
-    <div class="modal" id="config-modal">
+    <!-- Create/Edit User Modal -->
+    <div class="modal" id="user-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Dynamic Core Configuration Manager</h3>
-                <button class="close-btn" id="close-modal-btn">
-                    <svg style="width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
+                <h3 id="modal-title">Create VPN Account</h3>
+                <button class="close-btn" id="close-modal-btn">✕</button>
             </div>
             <div class="modal-body">
-                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">
-                    Modify target_core JSON configuration dynamically below. Any changes to clients, UUIDs, or routing rules will apply immediately on save.
-                </p>
-                <textarea class="config-area" id="config-textarea" spellcheck="false"></textarea>
+                <div class="form-group">
+                    <label>Email / Username</label>
+                    <input type="text" id="user-email" placeholder="e.g. dynamic_user@gmail.com">
+                </div>
+                <div class="form-group">
+                    <label>UUID Client Key (Auto-generated if empty)</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="user-uuid" placeholder="e.g. ad60c2b2-cc0c-492a-89aa-c92330a10cc9" style="flex: 1;">
+                        <button type="button" class="btn" id="btn-generate-uuid" style="padding: 8px 15px; font-size: 0.85rem; white-space: nowrap;">Generate</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Quota Limit (Total GB, 0 = Unlimited)</label>
+                    <input type="number" id="user-quota" min="0" placeholder="e.g. 50">
+                </div>
+                <div class="form-group">
+                    <label>Speed Limit (Mbps, 0 = Unlimited)</label>
+                    <input type="number" id="user-speed" min="0" placeholder="e.g. 20">
+                </div>
+                <div class="form-group">
+                    <label>Expiry Period (Days, 0 = Unlimited)</label>
+                    <input type="number" id="user-expiry" min="0" placeholder="e.g. 30">
+                </div>
+
+                <div style="margin: 20px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 20px;">
+                    <h4 style="margin-bottom: 12px; font-size: 0.95rem; font-weight: 600; color: #fff;">Connection Settings</h4>
+                    <div class="form-group">
+                        <label>Connection Mode</label>
+                        <select id="user-conn-mode" style="width: 100%;">
+                            <option value="existing_profile">Use Existing Reality Profile</option>
+                            <option value="custom_profile">Create Custom Reality Profile</option>
+                        </select>
+                    </div>
+
+                    <!-- Existing Profile Settings -->
+                    <div id="sec-existing-profile" style="margin-bottom: 1.25rem;">
+                        <div class="form-group">
+                            <label>Select Reality Profile</label>
+                            <select id="user-reality-profile" style="width: 100%;"></select>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; font-size: 0.85rem; display: flex; flex-direction: column; gap: 8px;">
+                            <div><strong>Inbound Tag:</strong> <span id="read-inbound-tag">-</span></div>
+                            <div><strong>Listen IP/Port:</strong> <span id="read-listen-port">-</span></div>
+                            <div><strong>Destination:</strong> <span id="read-dest">-</span></div>
+                            <div><strong>SNI:</strong> <span id="read-sni">-</span></div>
+                            <div><strong>Public Key:</strong> <span id="read-pub-key" style="font-family: monospace; font-size: 0.75rem; word-break: break-all;">-</span></div>
+                            <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+                                <label>Select Short ID</label>
+                                <select id="user-selected-short-id" style="width: 100%;"></select>
+                            </div>
+                            <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+                                <label>Select Client SNI</label>
+                                <select id="user-selected-sni" style="width: 100%;"></select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Profile Settings -->
+                    <div id="sec-custom-profile" style="display: none; margin-bottom: 1.25rem;">
+                        <div class="form-group">
+                            <label>Profile Name</label>
+                            <input type="text" id="cust-profile-name" placeholder="e.g. AKA MS Reality">
+                        </div>
+                        <div class="form-group">
+                            <label>Inbound Tag</label>
+                            <input type="text" id="cust-inbound-tag" placeholder="e.g. vless-reality-444">
+                        </div>
+                        <div class="form-group">
+                            <label>Listening Port</label>
+                            <input type="number" id="cust-port" placeholder="e.g. 444">
+                        </div>
+                        <div class="form-group">
+                            <label>Destination (host:port)</label>
+                            <input type="text" id="cust-dest" placeholder="e.g. aka.ms:443">
+                        </div>
+                        <div class="form-group">
+                            <label>Server Names / SNI (comma-separated)</label>
+                            <input type="text" id="cust-server-names" placeholder="e.g. aka.ms">
+                        </div>
+                        <div class="form-group">
+                            <label>Private Key</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="cust-private-key" placeholder="Generate or enter private key" style="flex: 1;">
+                                <button type="button" class="btn" id="btn-gen-keypair" style="padding: 8px 15px; font-size: 0.85rem; white-space: nowrap;">Generate Keypair</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Public Key (Auto-derived)</label>
+                            <input type="text" id="cust-public-key" readonly placeholder="Will be derived from private key" style="background: rgba(255,255,255,0.02); color: var(--text-muted);">
+                        </div>
+                        <div class="form-group">
+                            <label>Short ID (Hex, even length 2-16 chars)</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="cust-short-id" placeholder="e.g. da09ebd28dc215c8" style="flex: 1;">
+                                <button type="button" class="btn" id="btn-gen-short-id" style="padding: 8px 15px; font-size: 0.85rem; white-space: nowrap;">Generate Short ID</button>
+                            </div>
+                        </div>
+
+                        <!-- Validation Status Panel -->
+                        <div style="margin-top: 15px; margin-bottom: 15px; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px; background: rgba(255,255,255,0.01);">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-weight: 600; font-size: 0.85rem;">Validation Status</span>
+                                <button type="button" class="btn btn-secondary" id="btn-validate-settings" style="padding: 5px 12px; font-size: 0.75rem;">Validate Settings</button>
+                            </div>
+                            <div id="validation-feedback" style="font-size: 0.85rem; font-weight: 500; display: none;"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" id="cancel-config-btn">Cancel</button>
-                <button class="btn" id="save-config-btn">Reload Core Settings</button>
+                <button class="btn btn-secondary" id="cancel-user-btn">Cancel</button>
+                <button class="btn" id="save-user-btn">Save Account</button>
             </div>
         </div>
     </div>
 
-    <!-- Toast message alert -->
-    <div class="toast" id="toast-message">
-        <span id="toast-icon">✓</span>
-        <span id="toast-text">Settings reloaded successfully</span>
+    <!-- Add Quota Modal -->
+    <div class="modal" id="quota-modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3>Extend User Quota</h3>
+                <button class="close-btn" id="close-quota-btn">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="quota-user-id">
+                <div class="form-group">
+                    <label>Add Quota Volume (GB)</label>
+                    <input type="number" id="quota-add-amount" min="1" value="10">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-quota-btn">Cancel</button>
+                <button class="btn" id="save-quota-btn">Add Quota</button>
+            </div>
+        </div>
     </div>
 
-    <!-- Client-side Logic polling Axum REST endpoints -->
+    <!-- Settings Modal -->
+    <div class="modal" id="settings-modal">
+        <div class="modal-content" style="max-width: 450px;">
+            <div class="modal-header">
+                <h3>Settings & Password Change</h3>
+                <button class="close-btn" id="close-settings-btn">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Current Password</label>
+                    <input type="password" id="settings-current-password" placeholder="Enter current password">
+                </div>
+                <div class="form-group">
+                    <label>New Password</label>
+                    <input type="password" id="settings-new-password" placeholder="Enter new password (min 10 chars)">
+                </div>
+                <div class="form-group">
+                    <label>Confirm New Password</label>
+                    <input type="password" id="settings-confirm-password" placeholder="Confirm new password">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-settings-btn">Cancel</button>
+                <button class="btn" id="save-settings-btn">Update Password</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast alert message -->
+    <div class="toast" id="toast-message">
+        <span id="toast-icon">✓</span>
+        <span id="toast-text">Success</span>
+    </div>
+
     <script>
-        const configModal = document.getElementById('config-modal');
-        const openConfigBtn = document.getElementById('open-config-btn');
-        const closeModalBtn = document.getElementById('close-modal-btn');
-        const cancelConfigBtn = document.getElementById('cancel-config-btn');
-        const saveConfigBtn = document.getElementById('save-config-btn');
-        const configTextarea = document.getElementById('config-textarea');
+        // Global Fetch Interceptor to attach CSRF token for mutating requests
+        (function() {
+            const originalFetch = window.fetch;
+            window.fetch = function(url, options) {
+                options = options || {};
+                options.headers = options.headers || {};
+                const csrfToken = localStorage.getItem('csrf_token') || '';
+                if (csrfToken) {
+                    options.headers['X-CSRF-Token'] = csrfToken;
+                }
+                return originalFetch(url, options);
+            };
+        })();
+
+        const userModal = document.getElementById('user-modal');
+        const quotaModal = document.getElementById('quota-modal');
+        const settingsModal = document.getElementById('settings-modal');
+        const addBtn = document.getElementById('add-user-btn');
+        const settingsBtn = document.getElementById('settings-btn');
+        const saveUserBtn = document.getElementById('save-user-btn');
+        const saveQuotaBtn = document.getElementById('save-quota-btn');
+        const saveSettingsBtn = document.getElementById('save-settings-btn');
         const toast = document.getElementById('toast-message');
         const toastText = document.getElementById('toast-text');
         const toastIcon = document.getElementById('toast-icon');
 
-        // Helpers to display human-readable byte sizes
         function formatBytes(bytes, decimals = 2) {
             if (bytes === 0) return '0.00 B';
             const k = 1024;
@@ -756,150 +836,594 @@
             return `${hours}h ${minutes % 60}m`;
         }
 
-        // Display toast notification alerts
         function showToast(message, isError = false) {
             toastText.textContent = message;
             toastIcon.textContent = isError ? '✗' : '✓';
-            if (isError) {
-                toast.classList.add('error');
-            } else {
-                toast.classList.remove('error');
-            }
+            if (isError) toast.classList.add('error');
+            else toast.classList.remove('error');
             toast.classList.add('active');
-            setTimeout(() => {
-                toast.classList.remove('active');
-            }, 3500);
+            setTimeout(() => toast.classList.remove('active'), 3000);
         }
 
-        // Fetch statistics and connection tables from Axum API
-        async function fnFetchDashboardStats() {
-            try {
-                // Polling /stats endpoint
-                const statsRes = await fetch('/stats');
-                const usersStats = await statsRes.json();
-
-                // Polling /connections endpoint
-                const connsRes = await fetch('/connections');
-                const conns = await connsRes.json();
-
-                // 1. Update metric overview cards
-                document.getElementById('active-conns').textContent = conns.length;
-                document.getElementById('tot-users').textContent = usersStats.length;
-
-                let sumRx = 0;
-                let sumTx = 0;
-                usersStats.forEach(u => {
-                    sumRx += u.rx;
-                    sumTx += u.tx;
+        function copyToClipboard(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function() {
+                    showToast("Copied to clipboard!");
+                }, function() {
+                    fallbackCopy(text);
                 });
-                
-                document.getElementById('tot-rx').textContent = formatBytes(sumRx);
-                document.getElementById('tot-tx').textContent = formatBytes(sumTx);
-
-                // 2. Render Users Table
-                const usersContainer = document.getElementById('users-stats-container');
-                if (usersStats.length === 0) {
-                    usersContainer.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 3rem 0;">No active user metrics</p>`;
-                } else {
-                    usersContainer.innerHTML = usersStats.map(u => `
-                        <div class="user-card">
-                            <div class="user-info">
-                                <span class="user-email">${u.email}</span>
-                                <span class="user-badge">Active</span>
-                            </div>
-                            <div class="user-traffic-details">
-                                <div class="traffic-stat">
-                                    <span>Download:</span>
-                                    <span class="value">${formatBytes(u.rx)}</span>
-                                </div>
-                                <div class="traffic-stat">
-                                    <span>Upload:</span>
-                                    <span class="value">${formatBytes(u.tx)}</span>
-                                </div>
-                            </div>
-                        </div>
-                    `).join('');
-                }
-
-                // 3. Render Connections Table
-                const connsTableBody = document.getElementById('connections-table-body');
-                if (conns.length === 0) {
-                    connsTableBody.innerHTML = `
-                        <tr>
-                            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 3rem 0;">No active connections running</td>
-                        </tr>
-                    `;
-                } else {
-                    connsTableBody.innerHTML = conns.map(c => `
-                        <tr>
-                            <td>${c.client_ip}</td>
-                            <td class="dest-highlight">${c.dest_address}</td>
-                            <td>${c.sni ? `<span class="sni-badge">${c.sni}</span>` : '<span style="color: rgba(255,255,255,0.15)">-</span>'}</td>
-                            <td><span style="font-weight: 600; color: #a5b4fc;">${c.outbound_tag}</span></td>
-                            <td>
-                                <div>Rx: <span style="color: var(--secondary)">${formatBytes(c.rx)}</span></div>
-                                <div>Tx: <span style="color: var(--primary)">${formatBytes(c.tx)}</span></div>
-                            </td>
-                            <td>${formatDuration(c.uptime_secs)}</td>
-                        </tr>
-                    `).join('');
-                }
-            } catch (err) {
-                console.error("Failed to pull metrics stats: ", err);
+            } else {
+                fallbackCopy(text);
             }
         }
 
-        // Modal triggers
-        openConfigBtn.addEventListener('click', async () => {
+        function fallbackCopy(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
             try {
-                const res = await fetch('/config');
-                if (res.ok) {
-                    const config = await res.json();
-                    configTextarea.value = JSON.stringify(config, null, 4);
-                    configModal.classList.add('active');
+                document.execCommand('copy');
+                showToast("Copied to clipboard!");
+            } catch (err) {
+                showToast("Failed to copy", true);
+            }
+            document.body.removeChild(textArea);
+        }
+
+        let dashboardRequestInFlight = false;
+        let dashboardController = null;
+        let dashboardDelay = 10000;
+        let dashboardTimeoutId = null;
+        let lastEtag = "";
+
+        async function fnFetchDashboardStats() {
+            if (dashboardRequestInFlight || document.hidden) {
+                return;
+            }
+            dashboardRequestInFlight = true;
+
+            if (dashboardController) {
+                dashboardController.abort();
+            }
+            dashboardController = new AbortController();
+
+            try {
+                const headers = {};
+                if (lastEtag) {
+                    headers['If-None-Match'] = lastEtag;
+                }
+                const dashRes = await fetch('/api/dashboard', {
+                    signal: dashboardController.signal,
+                    headers: headers
+                });
+
+                if (dashRes.status === 304) {
+                    dashboardDelay = 10000;
+                    dashboardRequestInFlight = false;
+                    scheduleNextPoll();
+                    return;
+                }
+
+                if (!dashRes.ok) {
+                    throw new Error("Response not ok");
+                }
+
+                const etagHeader = dashRes.headers.get('ETag');
+                if (etagHeader) {
+                    lastEtag = etagHeader;
+                }
+
+                const dash = await dashRes.json();
+                const users = dash.users;
+
+                document.getElementById('cpu-usage').textContent = `${dash.cpu_percent.toFixed(1)}%`;
+                document.getElementById('cpu-bar').style.width = `${dash.cpu_percent}%`;
+                document.getElementById('ram-usage').textContent = `${dash.ram_used_gb.toFixed(1)} GB / ${dash.ram_total_gb.toFixed(1)} GB`;
+                document.getElementById('ram-bar').style.width = `${dash.ram_percent}%`;
+
+                const d = Math.floor(dash.uptime_secs / (3600*24));
+                const h = Math.floor((dash.uptime_secs % (3600*24)) / 3600);
+                const m = Math.floor((dash.uptime_secs % 3600) / 60);
+                document.getElementById('sys-uptime').textContent = `${d}d ${h}h ${m}m`;
+
+                // Metrics
+                document.getElementById('active-conns').textContent = dash.active_connections;
+                document.getElementById('tot-rx').textContent = formatBytes(dash.total_rx);
+                document.getElementById('tot-tx').textContent = formatBytes(dash.total_tx);
+
+                // Render Users Table
+                const usersBody = document.getElementById('users-table-body');
+                if (users.length === 0) {
+                    usersBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 3rem 0;">No accounts found</td></tr>`;
                 } else {
-                    showToast("Failed to retrieve configuration data", true);
+                    usersBody.innerHTML = users.map(u => {
+                        const expiryDate = u.expiry_time > 0 ? new Date(u.expiry_time * 1000).toLocaleString() : 'Never';
+                        const remGb = u.remaining_gb !== null ? `${u.remaining_gb.toFixed(2)} GB` : 'Unlimited';
+                        const speedStr = u.speed_limit > 0 ? `${u.speed_limit} Mbps` : 'Unlimited';
+
+                        return `
+                            <tr>
+                                <td style="font-weight: 600; color: #fff;">${u.email || 'User'}</td>
+                                <td style="font-family: monospace; font-size: 0.8rem; color: #a5b4fc;">${u.id}</td>
+                                <td>${speedStr}</td>
+                                <td>${expiryDate}</td>
+                                <td style="color: ${u.remaining_gb <= 0 ? 'var(--danger)' : 'var(--success)'};">${remGb}</td>
+                                <td>
+                                    <div>Rx: ${formatBytes(u.rx)}</div>
+                                    <div>Tx: ${formatBytes(u.tx)}</div>
+                                </td>
+                                <td>
+                                    <div class="action-btns">
+                                        <button class="btn btn-secondary small-btn" onclick="regenerateSubToken('${u.id}')">Get Sub Link (Regen)</button>
+                                        <button class="btn btn-secondary small-btn" onclick="openQuotaModal('${u.id}')">Add Quota</button>
+                                        <button class="btn btn-danger small-btn" onclick="deleteUser('${u.id}')">Delete</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+
+                dashboardDelay = 10000;
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.error("Dashboard pull error:", err);
+                    dashboardDelay = Math.min(dashboardDelay * 2, 60000);
+                }
+            } finally {
+                dashboardRequestInFlight = false;
+                scheduleNextPoll();
+            }
+        }
+
+        function scheduleNextPoll() {
+            if (dashboardTimeoutId) {
+                clearTimeout(dashboardTimeoutId);
+            }
+            if (!document.hidden) {
+                dashboardTimeoutId = setTimeout(fnFetchDashboardStats, dashboardDelay);
+            }
+        }
+
+        function stopDashboardPolling() {
+            if (dashboardTimeoutId) {
+                clearTimeout(dashboardTimeoutId);
+                dashboardTimeoutId = null;
+            }
+            if (dashboardController) {
+                dashboardController.abort();
+                dashboardController = null;
+            }
+            dashboardRequestInFlight = false;
+        }
+
+        function startDashboardPolling() {
+            scheduleNextPoll();
+        }
+
+        // Generate UUID button click event
+        document.getElementById('btn-generate-uuid').addEventListener('click', () => {
+            const randomUuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+            document.getElementById('user-uuid').value = randomUuid;
+        });
+
+        let activeProfiles = [];
+        let isSettingsValidated = false;
+
+        async function fetchProfiles() {
+            try {
+                const res = await fetch('/api/reality/profiles');
+                if (res.ok) {
+                    activeProfiles = await res.json();
+                    const rpSelect = document.getElementById('user-reality-profile');
+                    rpSelect.innerHTML = activeProfiles.map(p => `<option value="${p.id}">${p.name} (Port ${p.port})</option>`).join('');
+                    updateSelectedProfileDetails();
                 }
             } catch (err) {
-                showToast("Failed to connect to core API", true);
+                console.error("Failed to fetch reality profiles:", err);
+            }
+        }
+
+        function updateSelectedProfileDetails() {
+            const rpSelect = document.getElementById('user-reality-profile');
+            const profileId = rpSelect.value;
+            const profile = activeProfiles.find(p => p.id === profileId);
+            if (profile) {
+                document.getElementById('read-inbound-tag').textContent = profile.inbound_tag;
+                document.getElementById('read-listen-port').textContent = `${profile.listen}:${profile.port}`;
+                document.getElementById('read-dest').textContent = profile.dest;
+                document.getElementById('read-sni').textContent = profile.server_names.join(', ');
+                document.getElementById('read-pub-key').textContent = profile.public_key;
+
+                const sidSelect = document.getElementById('user-selected-short-id');
+                sidSelect.innerHTML = profile.short_ids.map(id => `<option value="${id}">${id}</option>`).join('');
+
+                const sniSelect = document.getElementById('user-selected-sni');
+                if (sniSelect) {
+                    sniSelect.innerHTML = profile.server_names.map(s => `<option value="${s}">${s}</option>`).join('');
+                }
+            } else {
+                document.getElementById('read-inbound-tag').textContent = '-';
+                document.getElementById('read-listen-port').textContent = '-';
+                document.getElementById('read-dest').textContent = '-';
+                document.getElementById('read-sni').textContent = '-';
+                document.getElementById('read-pub-key').textContent = '-';
+                document.getElementById('user-selected-short-id').innerHTML = '';
+                const sniSelect = document.getElementById('user-selected-sni');
+                if (sniSelect) sniSelect.innerHTML = '';
+            }
+        }
+
+        document.getElementById('user-reality-profile').addEventListener('change', updateSelectedProfileDetails);
+
+        const connModeSelect = document.getElementById('user-conn-mode');
+        connModeSelect.addEventListener('change', () => {
+            const mode = connModeSelect.value;
+            if (mode === 'existing_profile') {
+                document.getElementById('sec-existing-profile').style.display = 'block';
+                document.getElementById('sec-custom-profile').style.display = 'none';
+                saveUserBtn.disabled = false;
+            } else {
+                document.getElementById('sec-existing-profile').style.display = 'none';
+                document.getElementById('sec-custom-profile').style.display = 'block';
+                saveUserBtn.disabled = !isSettingsValidated;
             }
         });
 
-        const hideModal = () => {
-            configModal.classList.remove('active');
-        };
-
-        closeModalBtn.addEventListener('click', hideModal);
-        cancelConfigBtn.addEventListener('click', hideModal);
-
-        // Submit hot-reload request config to Axum
-        saveConfigBtn.addEventListener('click', async () => {
+        // Keypair generation
+        document.getElementById('btn-gen-keypair').addEventListener('click', async () => {
             try {
-                const jsonText = configTextarea.value;
-                const parsedConfig = JSON.parse(jsonText);
+                const res = await fetch('/api/reality/generate-keypair', { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('cust-private-key').value = data.private_key;
+                    document.getElementById('cust-public-key').value = data.public_key;
+                    isSettingsValidated = false;
+                    saveUserBtn.disabled = true;
+                    hideValidationFeedback();
+                }
+            } catch (err) {
+                showToast("Failed to generate keypair", true);
+            }
+        });
 
-                const res = await fetch('/reload', {
+        // Short ID generation
+        document.getElementById('btn-gen-short-id').addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/reality/generate-short-id', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ config: parsedConfig })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bytes: 8 })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('cust-short-id').value = data.short_id;
+                    isSettingsValidated = false;
+                    saveUserBtn.disabled = true;
+                    hideValidationFeedback();
+                }
+            } catch (err) {
+                showToast("Failed to generate short ID", true);
+            }
+        });
+
+        function hideValidationFeedback() {
+            const fb = document.getElementById('validation-feedback');
+            fb.style.display = 'none';
+        }
+
+        // Validate Settings
+        document.getElementById('btn-validate-settings').addEventListener('click', async () => {
+            const dest = document.getElementById('cust-dest').value.trim();
+            const serverNames = document.getElementById('cust-server-names').value.split(',').map(s => s.trim()).filter(Boolean);
+            const privateKey = document.getElementById('cust-private-key').value.trim();
+            const shortId = document.getElementById('cust-short-id').value.trim();
+            const port = parseInt(document.getElementById('cust-port').value) || 0;
+
+            if (!dest || serverNames.length === 0 || !privateKey || !shortId || port === 0) {
+                showToast("All custom profile fields are required for validation", true);
+                return;
+            }
+
+            const fb = document.getElementById('validation-feedback');
+            fb.style.display = 'block';
+            fb.style.color = 'var(--text-muted)';
+            fb.textContent = 'Validating connectivity & certificate coverage...';
+
+            try {
+                const res = await fetch('/api/reality/validate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dest,
+                        server_names: serverNames,
+                        private_key: privateKey,
+                        short_ids: [shortId],
+                        port
+                    })
                 });
 
                 if (res.ok) {
-                    showToast("Configuration dynamic reload success!");
-                    hideModal();
+                    const data = await res.json();
+                    if (data.valid) {
+                        isSettingsValidated = true;
+                        saveUserBtn.disabled = false;
+                        fb.style.color = 'var(--success)';
+                        fb.textContent = `✓ Valid settings! Derived Public Key: ${data.public_key} (Latency: ${data.connect_latency_ms}ms)`;
+                        document.getElementById('cust-public-key').value = data.public_key;
+                    } else {
+                        isSettingsValidated = false;
+                        saveUserBtn.disabled = true;
+                        fb.style.color = 'var(--danger)';
+                        fb.textContent = `✗ Validation failed: ${data.error || 'Unknown error'}`;
+                    }
+                } else {
+                    isSettingsValidated = false;
+                    saveUserBtn.disabled = true;
+                    fb.style.color = 'var(--danger)';
+                    fb.textContent = '✗ Connection error validating target';
+                }
+            } catch (err) {
+                isSettingsValidated = false;
+                saveUserBtn.disabled = true;
+                fb.style.color = 'var(--danger)';
+                fb.textContent = '✗ Connection error validating target';
+            }
+        });
+
+        // Add user modal triggers
+        addBtn.addEventListener('click', () => {
+            document.getElementById('user-uuid').value = '';
+            document.getElementById('user-email').value = '';
+            document.getElementById('user-quota').value = 0;
+            document.getElementById('user-speed').value = 0;
+            document.getElementById('user-expiry').value = 0;
+
+            // Reset custom profile settings
+            document.getElementById('cust-profile-name').value = '';
+            document.getElementById('cust-inbound-tag').value = '';
+            document.getElementById('cust-port').value = '';
+            document.getElementById('cust-dest').value = '';
+            document.getElementById('cust-server-names').value = '';
+            document.getElementById('cust-private-key').value = '';
+            document.getElementById('cust-public-key').value = '';
+            document.getElementById('cust-short-id').value = '';
+            hideValidationFeedback();
+            isSettingsValidated = false;
+
+            connModeSelect.value = 'existing_profile';
+            document.getElementById('sec-existing-profile').style.display = 'block';
+            document.getElementById('sec-custom-profile').style.display = 'none';
+            saveUserBtn.disabled = false;
+
+            fetchProfiles();
+            userModal.classList.add('active');
+        });
+
+        const hideUserModal = () => userModal.classList.remove('active');
+        document.getElementById('close-modal-btn').addEventListener('click', hideUserModal);
+        document.getElementById('cancel-user-btn').addEventListener('click', hideUserModal);
+
+        saveUserBtn.addEventListener('click', async () => {
+            const email = document.getElementById('user-email').value.trim();
+            const id = document.getElementById('user-uuid').value.trim();
+            const quota = parseFloat(document.getElementById('user-quota').value) || 0;
+            const speed = parseInt(document.getElementById('user-speed').value) || 0;
+            const expiryDays = parseInt(document.getElementById('user-expiry').value) || 0;
+
+            if (!email) {
+                showToast("Email/Username is required", true);
+                return;
+            }
+
+            const expiryTime = expiryDays > 0 ? Math.floor(Date.now() / 1000) + (expiryDays * 86400) : 0;
+            const totalGb = quota > 0 ? quota : null;
+
+            const mode = connModeSelect.value;
+            let payload = {
+                email,
+                id: id || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                }),
+                total_gb: totalGb,
+                speed_limit: speed > 0 ? speed : null,
+                expiry_time: expiryTime > 0 ? expiryTime : null,
+                connection_mode: mode
+            };
+
+            if (mode === 'existing_profile') {
+                payload.reality_profile_id = document.getElementById('user-reality-profile').value;
+                const sniSelect = document.getElementById('user-selected-sni');
+                if (sniSelect && sniSelect.value) {
+                    payload.sni = sniSelect.value;
+                }
+            } else {
+                if (!isSettingsValidated) {
+                    showToast("Custom profile settings must be validated first", true);
+                    return;
+                }
+                payload.custom_reality_profile = {
+                    name: document.getElementById('cust-profile-name').value.trim(),
+                    inbound_tag: document.getElementById('cust-inbound-tag').value.trim(),
+                    listen: '0.0.0.0',
+                    port: parseInt(document.getElementById('cust-port').value) || 0,
+                    dest: document.getElementById('cust-dest').value.trim(),
+                    server_names: document.getElementById('cust-server-names').value.split(',').map(s => s.trim()).filter(Boolean),
+                    private_key: document.getElementById('cust-private-key').value.trim(),
+                    short_ids: [document.getElementById('cust-short-id').value.trim()],
+                    fingerprint: 'chrome'
+                };
+            }
+
+            try {
+                const res = await fetch('/api/vpn-accounts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const host = window.location.hostname;
+                    const subUrl = `http://${host}:9100/sub/${data.sub_token}`;
+                    copyToClipboard(subUrl);
+                    alert(`VPN Account created successfully!\n\nSubscription URL:\n${subUrl}\n\nThe link has been copied to your clipboard.`);
+                    hideUserModal();
                     fnFetchDashboardStats();
                 } else {
-                    showToast("Server rejected updated configurations", true);
+                    const errText = await res.text();
+                    showToast(`Failed to create VPN account: ${errText}`, true);
                 }
             } catch (err) {
-                showToast("Invalid JSON syntax configuration formatting", true);
+                showToast("Connection failure", true);
             }
         });
 
-        // Loop polls dashboard stats every 1 second
-        setInterval(fnFetchDashboardStats, 1000);
+        // Add quota modal
+        function openQuotaModal(userId) {
+            document.getElementById('quota-user-id').value = userId;
+            document.getElementById('quota-add-amount').value = 10;
+            quotaModal.classList.add('active');
+        }
+
+        const hideQuotaModal = () => quotaModal.classList.remove('active');
+        document.getElementById('close-quota-btn').addEventListener('click', hideQuotaModal);
+        document.getElementById('cancel-quota-btn').addEventListener('click', hideQuotaModal);
+
+        saveQuotaBtn.addEventListener('click', async () => {
+            const userId = document.getElementById('quota-user-id').value;
+            const addGb = parseFloat(document.getElementById('quota-add-amount').value) || 0;
+
+            if (addGb <= 0) {
+                showToast("Add volume must be greater than 0", true);
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/users/${userId}/add-quota`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount_gb: addGb })
+                });
+
+                if (res.ok) {
+                    showToast("Quota extended successfully!");
+                    hideQuotaModal();
+                    fnFetchDashboardStats();
+                } else {
+                    showToast("Failed to extend quota", true);
+                }
+            } catch (err) {
+                showToast("Connection failure", true);
+            }
+        } );
+
+        async function deleteUser(userId) {
+            if (!confirm("Are you sure you want to delete this VPN account?")) return;
+
+            try {
+                const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+                if (res.ok) {
+                    showToast("VPN Account deleted successfully!");
+                    fnFetchDashboardStats();
+                } else {
+                    showToast("Failed to delete account", true);
+                }
+            } catch (err) {
+                showToast("Connection failure", true);
+            }
+        }
+
+        // Settings Modal event listeners and handlers
+        const showSettingsModal = () => {
+            document.getElementById('settings-current-password').value = '';
+            document.getElementById('settings-new-password').value = '';
+            document.getElementById('settings-confirm-password').value = '';
+            settingsModal.classList.add('active');
+        };
+        const hideSettingsModal = () => settingsModal.classList.remove('active');
+
+        settingsBtn.addEventListener('click', showSettingsModal);
+        document.getElementById('close-settings-btn').addEventListener('click', hideSettingsModal);
+        document.getElementById('cancel-settings-btn').addEventListener('click', hideSettingsModal);
+
+        saveSettingsBtn.addEventListener('click', async () => {
+            const currentPassword = document.getElementById('settings-current-password').value;
+            const newPassword = document.getElementById('settings-new-password').value;
+            const confirmPassword = document.getElementById('settings-confirm-password').value;
+
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                showToast("Please fill all fields", true);
+                return;
+            }
+            if (newPassword !== confirmPassword) {
+                showToast("New passwords do not match", true);
+                return;
+            }
+            if (newPassword.length < 10) {
+                showToast("Password must be at least 10 characters", true);
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+                });
+
+                if (res.ok) {
+                    showToast("Password updated successfully! Logging out...");
+                    hideSettingsModal();
+                    // Redirect to dashboard (which will prompt for authentication due to session expiration)
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    const errText = await res.text();
+                    showToast(`Failed to update password: ${errText}`, true);
+                }
+            } catch (err) {
+                showToast("Connection failure", true);
+            }
+        });
+
+        async function regenerateSubToken(userId) {
+            if (!confirm("Are you sure you want to regenerate the subscription token? This will invalidate all current subscription URLs for this user!")) return;
+            try {
+                const res = await fetch(`/api/users/${userId}/regenerate-token`, {
+                    method: 'POST'
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const host = window.location.hostname;
+                    const newSubUrl = `http://${host}:9100/sub/${data.sub_token}`;
+                    copyToClipboard(newSubUrl);
+                    alert(`Subscription token regenerated successfully!\n\nNew Subscription URL:\n${newSubUrl}\n\nThe link has been copied to your clipboard.`);
+                    fnFetchDashboardStats();
+                } else {
+                    showToast("Failed to regenerate token", true);
+                }
+            } catch (err) {
+                showToast("Connection failure", true);
+            }
+        }
+
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+                stopDashboardPolling();
+            } else {
+                fnFetchDashboardStats();
+            }
+        });
+
+        // Initialize polling
         fnFetchDashboardStats();
     </script>
 </body>

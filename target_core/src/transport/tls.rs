@@ -1,7 +1,7 @@
+use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use std::sync::Arc;
 use tokio_rustls::rustls;
-use tokio_rustls::{TlsConnector, TlsAcceptor};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio_rustls::{TlsAcceptor, TlsConnector};
 use tracing::{info, warn};
 
 pub mod tls_helper {
@@ -24,31 +24,10 @@ pub mod tls_helper {
             for cert in native_certs.certs {
                 let _ = root_store.add(cert);
             }
-            let mut provider = rustls::crypto::ring::default_provider();
-            provider.cipher_suites.sort_by_key(|suite| {
-                let code = u16::from(suite.suite());
-                match code {
-                    0x1301 => 0,
-                    0x1302 => 1,
-                    0x1303 => 2,
-                    0xC02B => 3,
-                    0xC02F => 4,
-                    0xC02C => 5,
-                    0xC030 => 6,
-                    0xCCA9 => 7,
-                    0xCCAA => 8,
-                    _ => 100,
-                }
-            });
-            let mut config = rustls::ClientConfig::builder_with_provider(Arc::new(provider))
-                .with_safe_default_protocol_versions()
-                .unwrap()
+            let mut config = rustls::ClientConfig::builder()
                 .with_root_certificates(root_store)
                 .with_no_client_auth();
-            config.alpn_protocols = vec![
-                b"h2".to_vec(),
-                vec![104, 116, 116, 112, 47, 49, 46, 49],
-            ];
+            config.alpn_protocols = vec![b"h2".to_vec(), vec![104, 116, 116, 112, 47, 49, 46, 49]];
             TlsConnector::from(Arc::new(config))
         });
         Ok(connector.clone())
@@ -65,12 +44,17 @@ pub mod tls_helper {
             let key = load_key(k_path)?;
             (certs, key)
         } else {
-            warn!("No certificate files configured. Generating ephemeral self-signed certificates.");
+            warn!(
+                "No certificate files configured. Generating ephemeral self-signed certificates."
+            );
             let subject_alt_names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
             let cert = rcgen::generate_simple_self_signed(subject_alt_names)?;
             let cert_der = cert.serialize_der()?;
             let key_der = cert.serialize_private_key_der();
-            (vec![CertificateDer::from(cert_der)], PrivateKeyDer::Pkcs8(key_der.into()))
+            (
+                vec![CertificateDer::from(cert_der)],
+                PrivateKeyDer::Pkcs8(key_der.into()),
+            )
         };
 
         let config = rustls::ServerConfig::builder()
@@ -83,16 +67,16 @@ pub mod tls_helper {
     fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>, std::io::Error> {
         let certfile = std::fs::File::open(path)?;
         let mut reader = std::io::BufReader::new(certfile);
-        let certs = rustls_pemfile::certs(&mut reader)
-            .collect::<Result<Vec<_>, _>>()?;
+        let certs = rustls_pemfile::certs(&mut reader).collect::<Result<Vec<_>, _>>()?;
         Ok(certs)
     }
 
     fn load_key(path: &str) -> Result<PrivateKeyDer<'static>, std::io::Error> {
         let keyfile = std::fs::File::open(path)?;
         let mut reader = std::io::BufReader::new(keyfile);
-        let key = rustls_pemfile::private_key(&mut reader)?
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "No private key found"))?;
+        let key = rustls_pemfile::private_key(&mut reader)?.ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "No private key found")
+        })?;
         Ok(key)
     }
 }
