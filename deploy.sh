@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 set -euo pipefail
 
 VPS_HOST="${1:-root@172.236.153.131}"
